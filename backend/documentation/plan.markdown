@@ -4,6 +4,10 @@ The backend accepts Java source and returns bounded execution traces through the
 
 ## Current status
 
+- **Phase 2 Stage 1 (database foundation): Initial migrations and profiles added; local/cloud database verification pending.** Local default uses file-backed H2; `local-sqlserver` and `azure` target SQL Server. Account/OTP tables are used by the app; authentication does not use server-side session tables.
+- **Phase 2 Stage 2 (authentication): JWT/local OTP implementation added; build and runtime verification pending.** The frontend login page gates the visualizer, signup and reset use email OTP outside the local profile, and the backend issues short-lived JWTs in HttpOnly cookies with CSRF protection. Local profile accepts fixed OTP `1234`; Azure profile requires a signing secret and real email settings. SQL Server/H2, frontend-browser, and JWT flows still need local verification.
+- **Local H2 startup issue:** Corrected the configured H2 mode from unsupported `MSSQL` to `MSSQLServer` after the user's Spring Boot log showed H2 2.2.224 rejecting the old mode name. Restart from Eclipse to verify database migration startup.
+
 - **Stages 1–2: Complete.** Maven/Spring Boot setup, request validation, in-process Java compilation, separate-JVM JDI line tracing, stdout, runtime exceptions, and execution limits. The user confirmed `/health` and a successful Largest trace.
 - **Stage 3: Implemented and runtime-verified with Factorial.** The response includes recursive call stack frames, visible parameters/locals, `this` support, method entry/exit events, return values, explanations, and a maximum of 50 displayed frames. The user confirmed a live Factorial response showing `fact(3) = 6`, recursive parameter values, and return values 1, 2, and 6.
 - **Stage 4: Implemented; response shape verified with Factorial.** The user's live response contains a heap snapshot on every event, includes the empty `args` array, and leaves primitive variables without reference IDs. User-object fields, static fields, non-empty arrays, and collections remain unverified. Main sources compiled with JDK 21 using Java 17 source/target settings.
@@ -11,6 +15,8 @@ The backend accepts Java source and returns bounded execution traces through the
 - **Stage 6: Implemented; build/runtime verification pending.** Trace events contain line classifications, variable/heap deltas (including changed object fields and array indices with before/after values), branch/loop explanations, and a final `end` event.
 - **Stage 7: Implemented; container verification pending.** Per-client fixed-window limits, concurrent-run admission, configurable CORS, a non-root JDK container image, and restrictive runtime instructions are present.
 - **Stage 8: Tests and documentation added; execution pending.** JUnit tests cover source/main handling, AST inspection, trace enrichment, admission controls, and Spring MVC/JDI integration. Maven is not available in the current coding shell, so these tests have not yet run.
+
+The phase-two authentication implementation is separate from backend Stages 1–8. Do not mark it verified until its Maven build, migrations, email delivery, and browser JWT flow have been exercised. The fixed OTP is only present in the `local` and `local-sqlserver` development profiles; do not activate either in a hosted environment.
 ## Stage 1 — Project setup, request handling, and compilation
 
 - Maven Spring Boot backend with Java 17 source/target, running on a full JDK 21.

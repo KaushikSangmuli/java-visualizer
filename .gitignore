@@ -1,6 +1,7 @@
 # Java backend (Maven / Eclipse)
 backend/target/
 backend/bin/
+backend/data/
 backend/.classpath
 backend/.project
 backend/.settings/

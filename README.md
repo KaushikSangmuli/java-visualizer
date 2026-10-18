@@ -62,6 +62,16 @@ The React application is a separate project in `frontend/` and can be edited in 
 
 Trace responses also include source metadata, line classifications, variable and heap deltas, and a final `end` event. The backend applies a configurable AST API blocklist, per-client rate limit, and concurrency limit. These are guardrails rather than a secure Java sandbox. See `backend/README.md` for Docker restrictions and runtime settings.
 
+## Accounts (phase two)
+
+The backend now includes email/password signup, OTP verification, JWT-cookie login/logout, and password reset. The frontend opens on login with a signup link; authenticated users then reach the visualizer. Local development defaults to a persistent H2 database in `backend/data/` and accepts OTP `1234` without email. Use the `local-sqlserver` profile to connect to local SQL Server using its migrations and the same OTP bypass. Other profiles require a Brevo API key and verified sender. For Azure deployment, activate the `azure` Spring profile, set Azure SQL connection variables, and provide `VISUALIZER_JWT_SECRET` (at least 32 UTF-8 bytes). Never place credentials in frontend code or commit them; do not deploy with a local profile.
+
+The frontend uses the backend's HttpOnly JWT cookie and CSRF token. The backend requires authentication for `/api/visualize`. In cloud builds, set `VITE_API_BASE_URL` to the backend origin and configure backend `CORS_ALLOWED_ORIGINS` to the exact frontend origin. See `backend/README.md` for environment variables and endpoints. The frontend production build passed when written to a permitted temporary location; writing to the project `dist` directory is blocked by this environment's Windows permissions. Backend compilation and end-to-end authentication have not been verified because Java and Maven are unavailable in this coding shell.
+
+## Phase-two services and CI/CD plan
+
+The selected low-cost direction is Azure Static Web Apps Free for the frontend, Azure Container Apps Consumption for the backend, Azure SQL Database Free offer for persistence, and Brevo Free for OTP email. Free limits and creation-time settings are summarized in [`plan.markdown`](plan.markdown). GitHub Actions is planned in `.github/workflows/ci-cd.yml`: validate pull requests, then deploy both applications after a successful push to `main`. This workflow and cloud resources have not yet been created.
+
 ## Scope and safety
 
 The current interface supports Java source submission, sample loading, execution, line highlighting, trace playback/step controls, stack and variable inspection, heap/static-field inspection, compile/runtime/blocked API display, state changes, stdout, and raw response inspection. Arbitrary Java execution is not safe without proper OS sandboxing; use trusted code locally only.

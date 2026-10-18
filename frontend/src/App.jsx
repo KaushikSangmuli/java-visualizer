@@ -3,6 +3,10 @@ import CodeEditor from './components/CodeEditor.jsx';
 import { ConsolePanel, FocusedPanel, HeapPanel, LoopStatus, StackPanel } from './components/TracePanels.jsx';
 import { examples } from './examples.js';
 import { loopAtTraceStep } from './loopAnalysis.js';
+import AuthPanel from './components/AuthPanel.jsx';
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const apiUrl = (path) => `${API_BASE}${path}`;
 
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -34,12 +38,16 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [health, setHealth] = useState('checking');
+  const [authLoading, setAuthLoading] = useState(true);
   const [requestError, setRequestError] = useState('');
   const [selectedObjectId, setSelectedObjectId] = useState(null);
   const [focusedItem, setFocusedItem] = useState(null);
   const [fullAnalysis, setFullAnalysis] = useState(true);
   const [hoveredStepIndex, setHoveredStepIndex] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
+  const [csrfToken, setCsrfToken] = useState('');
 
   const trace = response?.trace ?? [];
   const step = trace[currentStepIndex] ?? null;
@@ -56,11 +64,44 @@ export default function App() {
   }, [response]);
 
   useEffect(() => {
-    fetch('/health')
+    fetch(apiUrl('/health'), { credentials: 'include' })
       .then((result) => result.json())
       .then((body) => setHealth(body.status === 'ok' ? 'online' : 'offline'))
       .catch(() => setHealth('offline'));
+    fetch(apiUrl('/api/auth/csrf'), { credentials: 'include' })
+      .then((result) => result.json()).then((body) => setCsrfToken(body.token ?? '')).catch(() => {});
+    fetch(apiUrl('/api/auth/me'), { credentials: 'include' })
+      .then((result) => result.ok ? result.json() : null)
+      .then((body) => setAuthUser(body))
+      .catch(() => setAuthUser(null))
+      .finally(() => setAuthLoading(false));
   }, []);
+
+  async function getCsrfToken() {
+    if (csrfToken) return csrfToken;
+    const tokenResponse = await fetch(apiUrl('/api/auth/csrf'), { credentials: 'include' });
+    if (!tokenResponse.ok) throw new Error('Could not initialize secure sign-in.');
+    const token = (await tokenResponse.json()).token ?? '';
+    setCsrfToken(token);
+    return token;
+  }
+
+  async function authRequest(path, payload) {
+    const token = await getCsrfToken();
+    const response = await fetch(apiUrl(path), {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': token ?? '' },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message ?? 'The request could not be completed.');
+    return body;
+  }
+
+  async function logout() {
+    await authRequest('/api/auth/logout', {});
+    setAuthUser(null);
+  }
 
   useEffect(() => {
     if (!playing || trace.length === 0) return undefined;
@@ -79,12 +120,19 @@ export default function App() {
     setSelectedObjectId(null);
     setFocusedItem(null);
     try {
-      const result = await fetch('/api/visualize', {
+      const result = await fetch(apiUrl('/api/visualize'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': await getCsrfToken() },
         body: JSON.stringify({ code }),
       });
       const body = await result.json();
+      if (result.status === 401) {
+        setAuthUser(null);
+        setResponse(null);
+        setRequestError('Your sign-in expired. Please sign in again to run the visualizer.');
+        return;
+      }
       setResponse(body);
       setCurrentStepIndex(0);
     } catch (error) {
@@ -124,6 +172,9 @@ export default function App() {
   const heap = step?.heap ?? null;
   const eventClass = step?.event === 'exception' ? 'event-exception' : step?.event === 'call' ? 'event-call' : step?.event === 'return' ? 'event-return' : 'event-step';
 
+  if (authLoading) return <div className="auth-loading" role="status">Loading your account…</div>;
+  if (!authUser) return <AuthPanel standalone onClose={() => {}} onRequest={authRequest} onLogin={setAuthUser} />;
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -132,8 +183,13 @@ export default function App() {
           <span className="brand-wordmark">java<span>viz</span></span>
         </a>
         <div className="topbar-center"><span className="topbar-label">INTERACTIVE EXECUTION TRACE</span><span className="topbar-divider" />Java · JDI</div>
-        <div className={`backend-indicator ${health}`}><span className="status-dot" />{health === 'online' ? 'Backend connected' : health === 'checking' ? 'Checking backend…' : 'Backend offline'}</div>
+        <div className="topbar-actions">
+          <button type="button" className="account-button" onClick={() => setAuthOpen(true)}>{authUser ? authUser.email : 'Sign in'}</button>
+          <div className={`backend-indicator ${health}`}><span className="status-dot" />{health === 'online' ? 'Backend connected' : health === 'checking' ? 'Checking backend…' : 'Backend offline'}</div>
+        </div>
       </header>
+
+      {authOpen && <AuthPanel user={authUser} onClose={() => setAuthOpen(false)} onRequest={authRequest} onLogin={setAuthUser} onLogout={logout} />}
 
       <main className="page-content" id="top">
         <section className="intro-row">

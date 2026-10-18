@@ -4,7 +4,7 @@
 
 ### Product overview
 
-**Java Code Memory Visualizer — Python Tutor for Java and DSA** is a learning application for tracing Java programs. The Spring Boot backend parses and checks submitted source, compiles it, runs it in a separate debuggee JVM, and returns a JSON execution trace enriched with source metadata and state changes. The React frontend lets learners edit code, navigate events, and inspect the current stack, variables, heap, static fields, and output. Backend Stages 1–8 provide the current planned product workflow.
+**Java Code Memory Visualizer — Python Tutor for Java and DSA** is a learning application for tracing Java programs. The Spring Boot backend parses and checks submitted source, compiles it, runs it in a separate debuggee JVM, and returns a JSON execution trace enriched with source metadata and state changes. Learners first see a login page, with a signup link for new accounts; verified users access the visualizer using a short-lived JWT in an HTTP-only cookie. Account and OTP challenge data are stored in the configured database, and visualization requests require authentication.
 
 ### Product goal
 
@@ -17,7 +17,12 @@ A learner selects a sample or enters Java source in the editor and chooses **Run
 ### API contract
 
 - `GET /health` returns `{"status":"ok"}`.
-- `POST /api/visualize` accepts JSON with a `code` field, for example:
+- `GET /api/auth/csrf` initializes the CSRF cookie/token required by auth-changing requests.
+- `POST /api/auth/signup` accepts `{ "email", "password" }`; `POST /api/auth/verify-email` accepts `{ "email", "code" }`.
+- `POST /api/auth/login` accepts `{ "email", "password" }` and creates a short-lived HTTP-only JWT cookie; `GET /api/auth/me` returns the signed-in email; `POST /api/auth/logout` clears the cookie.
+- `POST /api/auth/verification-code/resend`, `/api/auth/password-reset/request`, and `/api/auth/password-reset/complete` support verification resend and OTP password recovery. Auth-changing browser calls must send the `X-XSRF-TOKEN` header obtained from the CSRF endpoint.
+- Local `local` and `local-sqlserver` profiles only: signup and password reset use fixed OTP `1234`, without email delivery. Hosted `azure` profile has no fixed OTP and requires Brevo settings and `VISUALIZER_JWT_SECRET`.
+- Authenticated `POST /api/visualize` accepts JSON with a `code` field, for example:
 
   ```json
   {"code":"public class Main { public static void main(String[] args) { System.out.println(\"Hello\"); } }"}
@@ -50,7 +55,7 @@ The Striver’s DSA sheet, premium company-wise lists, and LeetCode question bro
 
 ### Product limitations and safety
 
-The trace provides source-line events, stack/variable snapshots, method boundaries, return values, bounded heap graphs, user-class static fields, source classifications, and state deltas. The API blocklist, timeout, process limits, request limiting, CORS, and non-root container are defense in depth and do not make arbitrary Java execution safe. Deploy only with an OS/container security policy that restricts network access, CPU, memory, process count, and writable paths; use trusted code during development.
+The trace provides source-line events, stack/variable snapshots, method boundaries, return values, bounded heap graphs, user-class static fields, source classifications, and state deltas. Account signup/login uses email OTP, BCrypt password hashes, short-lived JWT cookies, CSRF protection, and configurable CORS. The local profile uses the fixed OTP `1234` only to unblock development without email; never activate the local profile for a hosted deployment. The API blocklist, timeout, process limits, request limiting, CORS, and non-root container are defense in depth and do not make arbitrary Java execution safe. Deploy only with an OS/container security policy that restricts network access, CPU, memory, process count, and writable paths; use trusted code during development.
 
 ## 2. Technical Flow and Configuration
 
@@ -65,7 +70,7 @@ The trace provides source-line events, stack/variable snapshots, method boundari
 
 #### Backend flow
 
-1. Spring Boot starts `backend/src/main/java/com/example/demo/VisualizerApplication.java` in the root package `com.example.demo`, allowing component scanning across its subpackages.
+1. Spring Boot starts `backend/src/main/java/com/example/demo/VisualizerApplication.java` in the root package `com.example.demo`, allowing component scanning across its subpackages. Security, JPA, and Flyway are configured by the same application context; the `local` default profile selects H2 and the local-only OTP, `local-sqlserver` selects local SQL Server plus that OTP, and `azure` selects SQL Server without the OTP and requires a hosted JWT secret.
 2. `VisualizeController` handles `GET /health` and accepts the optional `VisualizeRequest` body on `POST /api/visualize`; it passes the remote address to request admission.
 3. `VisualizeService.visualize` rejects missing/blank or over-limit source. `SourceHelper.strip` masks comments and literals while preserving source positions; `SourceHelper.findMain` identifies the binary launch class and Java filename. `CodeInspector.inspect` uses JavaParser to produce method/loop/branch metadata and AST-based blocked API findings.
 4. `RequestAdmissionService.acquire` applies the configured per-client window and concurrency semaphore. Rejected requests return a handled `busy` response. Accepted requests create a unique temporary directory with `Files.createTempDirectory`, write source beneath `src/`, and blank a package declaration without shifting line numbers.
@@ -74,6 +79,7 @@ The trace provides source-line events, stack/variable snapshots, method boundari
 7. JDI class-prepare handling installs a breakpoint at the main method. The tracer records the first breakpoint as a `call` step, then recreates count-filtered line-step requests. Method entry/exit requests capture user method boundaries; exit return values are mirrored through JDI when supported. At each event, the tracer reads up to 50 user frames and their visible variables while the debuggee is suspended. It walks reachable object fields/array elements and static fields declared by loaded user classes using JDI mirrors, deduplicating by object identity to preserve aliases/cycles. It does not invoke debuggee methods.
 8. Uncaught exceptions are reported using debuggee frame information and the exception's stored message field. When execution ends or a configured limit is reached, the tracer stops the debuggee as needed and returns its trace/result.
 9. `TraceEnricher.enrich` adds source line classifications, approximate loop/branch explanations, consecutive variable and heap deltas, and a final `end` event. The service always removes temporary files and releases its admission permit in `finally`.
+10. Auth endpoints create accounts and persist hashed one-time verification/reset challenges. The local profile stores a BCrypt hash of the fixed `1234` code and skips email delivery; other profiles generate random six-digit codes and send them through Brevo. Login authenticates verified accounts with BCrypt and issues a signed HS256 JWT in an HTTP-only cookie. A JWT cookie filter restores request authentication; Spring Security is stateless, CSRF remains enabled for cookie-authenticated mutations and accepts the plain token fetched by the frontend, and visualization requests require a valid JWT. Login attempts and challenge retries are bounded. Password reset does not revoke already issued JWTs; they expire within 30 minutes.
 
 ### Project layout
 
@@ -126,12 +132,84 @@ Java package names map to real nested directories such as `backend/src/main/java
 | `visualizer.rate-limit-window-ms` | `60000` | Per-client rate-limit window |
 | `visualizer.rate-limit-max-clients` | `10000` | Maximum tracked client windows |
 | `visualizer.cors.allowed-origins` | local Vite origins | Comma-separated browser origins allowed by CORS |
+| `visualizer.auth.login-max-failures` | `10` | Login failures allowed before a client is throttled |
+| `visualizer.auth.login-window-ms` | `900000` | Login failure throttle window |
+| `visualizer.auth.jwt-ttl-seconds` | `1800` | JWT cookie lifetime |
+| `visualizer.auth.cookie-secure` | local `false`, hosted `true` | Requires HTTPS when enabled |
+| `visualizer.auth.cookie-same-site` | local `Lax`, hosted `None` | Browser cookie cross-site policy |
+
+Local database defaults to file-backed H2 under `backend/data/` with the `local` default profile. The H2 URL uses compatibility mode `MSSQLServer` (H2's exact mode name). `local` and `local-sqlserver` accept OTP `1234`; the latter uses SQL Server migrations and `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`. Local profiles generate an ephemeral JWT signing key at startup, so local JWTs become invalid after a backend restart. Use `SPRING_PROFILES_ACTIVE=azure` with database variables and a strong `VISUALIZER_JWT_SECRET` (minimum 32 UTF-8 bytes) for Azure SQL. OTP mail uses `VISUALIZER_BREVO_API_KEY`, `VISUALIZER_EMAIL_SENDER`, and optional `VISUALIZER_EMAIL_SENDER_NAME`. Configure `CORS_ALLOWED_ORIGINS` with exact frontend origins. For hosted HTTPS, keep `AUTH_COOKIE_SECURE=true`; use `AUTH_COOKIE_SAME_SITE=None` only when frontend and backend are on different sites, otherwise `Lax` is preferred. The frontend build accepts `VITE_API_BASE_URL` for the backend origin.
 
 ### Verification state
 
-The installed JDK 21 executable and `javac` were located and reported version `21.0.12.1`; `jdk.jdi@21.0.12.1` is present. Maven is not on this task shell's PATH and no Maven executable was found in the usual install/cache directories, so the modified backend has not been built or launched here. The user previously verified the pre-enrichment Factorial trace live. The new Stage 5–8 tests and sample matrix are pending a local `mvn -q test` / Eclipse Maven run. The latest frontend production build passed; browser/API integration with the modified backend remains pending.
+Phase-two authentication code is present but has not been built or exercised in this turn. Local development uses a persistent H2 database under ignored `backend/data/`; deploy with the `azure` Spring profile to use Azure SQL. The local OTP bypass is unavailable in the `azure` profile. See `backend/README.md` for environment variables and auth endpoints.
+
+The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it has Node.js 24.19.0. The authentication changes therefore have not been compiled, started, or browser-tested here. Earlier user-reported trace runs apply to the previous backend state, not to these authentication changes. Run Maven and the frontend build locally after configuring the database and Brevo email credentials.
 
 ## 3. Changes Made (Append Only)
+
+### 2026-10-18 — Require JWT authentication and add a local OTP bypass
+
+**Technical analysis:** Replaced server-side login sessions with stateless authentication backed by short-lived signed JWTs in an HttpOnly cookie. CSRF remains enabled because the browser sends the JWT cookie automatically. `/api/visualize` now requires an authenticated request. Local signup and password-reset challenges use the fixed code `1234` and do not call email delivery; outside the local profile, OTPs remain random six-digit values delivered through Brevo. Production configuration requires an external signing secret and does not enable the bypass.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/config/SecurityConfiguration.java` — `securityFilterChain` switches to stateless authentication, adds the JWT cookie filter, protects visualization, and keeps CSRF on.
+- `src/main/java/com/example/demo/config/JwtConfiguration.java` — `jwtSecretKey`, `jwtEncoder`, and `jwtDecoder` validate/configure HS256.
+- `src/main/java/com/example/demo/config/JwtCookieAuthenticationFilter.java` — `doFilterInternal` and `authCookie` verify and read the HttpOnly JWT cookie for each request.
+- `src/main/java/com/example/demo/service/auth/JwtTokenService.java` — `writeAuthCookie`, `clearAuthCookie`, and `cookie` create and expire short-lived auth cookies.
+- `src/main/java/com/example/demo/controller/auth/AuthController.java` — `signup`, `login`, `logout`, `requestReset`, and OTP request records return local OTP guidance and issue/clear JWT cookies.
+- `src/main/java/com/example/demo/service/auth/AuthService.java` — `sendChallenge` chooses the profile OTP and skips the email provider only in local mode.
+- `pom.xml`, `src/main/resources/application.properties`, `application-local.properties`, `application-local-sqlserver.properties`, and `application-azure.properties` — configure JWT support, local OTP modes, and hosted secret/cookie requirements.
+- `documentation/plan.markdown` and frontend documentation files — update the auth plan/flow and verification status.
+
+**Verification:** Pending. Maven compile/startup, database migration, OTP lifecycle, and browser integration have not yet been verified in this turn.
+
+### 2026-10-18 — Add phase-two email authentication foundation
+
+**Technical analysis:** Added persistent account and one-time challenge storage, Flyway migrations for local H2 and Azure SQL, JDBC-backed servlet sessions, BCrypt password hashing, email OTP verification and password reset through Brevo, CSRF-protected session login/logout, a per-IP login-failure throttle, and exact-origin credentialed CORS. Existing `/health` and anonymous `/api/visualize` behavior is preserved. Authenticated browser state is kept in HttpOnly sessions; mutation requests require the CSRF token. Azure credentials are externalized, and local database files are ignored.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/auth/UserAccount.java` — `UserAccount`, `isEnabled`, and password/verification state.
+- `src/main/java/com/example/demo/model/auth/EmailChallenge.java` — challenge expiry, attempts, consumption, and resend timing.
+- `src/main/java/com/example/demo/repository/auth/UserAccountRepository.java` and `EmailChallengeRepository.java` — email lookup and latest challenge persistence.
+- `src/main/java/com/example/demo/service/auth/AuthService.java` — `signup`, `verifyEmail`, `resendSignupCode`, `requestPasswordReset`, `resetPassword`, `latestUsable`, `sendChallenge`, and UTF-8 password length validation.
+- `src/main/java/com/example/demo/service/auth/EmailDeliveryService.java` — `sendCode` via Brevo transactional email API.
+- `src/main/java/com/example/demo/service/auth/AuthRateLimiter.java` — `isAllowed`, `failed`, and `succeeded` login throttling.
+- `src/main/java/com/example/demo/config/SecurityConfiguration.java` — password encoder, authentication manager, CSRF and route policy.
+- `src/main/java/com/example/demo/config/WebConfiguration.java` — credentialed CORS and CSRF request headers.
+- `src/main/java/com/example/demo/controller/auth/AuthController.java` — CSRF bootstrap, signup, verification, login, current-user, session refresh, logout, resend, and reset endpoints.
+- `src/main/java/com/example/demo/controller/auth/AuthExceptionHandler.java` — safe auth/email-service error responses.
+- `pom.xml`, `src/main/resources/application.properties`, `application-azure.properties`, and `src/main/resources/db/migration/{h2,sqlserver}/` — dependencies, local/cloud connection profiles, and schema migrations.
+- `backend/data/` in `.gitignore` — excludes local H2 database files.
+
+**Verification:** Not run. The current coding shell does not have `java`, `javac`, or Maven on PATH. Database migrations, Spring startup, OTP delivery, and browser authentication still require local configuration and verification.
+
+### 2026-10-18 — Keep JWT authentication stateless and match CSRF token requests
+
+**Technical analysis:** Removed the password-reset dependency on Spring Session because authentication is stateless JWT and no server-side session storage is provisioned. Password-reset success therefore no longer queries missing session tables; existing JWTs remain valid until their 30-minute expiry. CSRF token request handling now accepts the plain token returned by the bootstrap endpoint and sent in the browser header.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/config/SecurityConfiguration.java` — `securityFilterChain` configures `CsrfTokenRequestAttributeHandler` with the readable CSRF cookie repository.
+- `src/main/java/com/example/demo/service/auth/AuthService.java` — constructor and `resetPassword` remove unused Spring Session repository injection and lookup.
+- `pom.xml` — removes the unused `spring-session-jdbc` dependency.
+- `src/main/resources/application.properties` — removes session JDBC properties.
+- `documentation/document.markdown` and `documentation/plan.markdown` — update current auth and verification state; this analysis is appended.
+
+**Verification:** `git diff --check` found no whitespace errors (only line-ending conversion notices). Maven, Java, and `javac` are not available in this shell; backend compilation and login/CSRF runtime behavior remain unverified.
+
+### 2026-10-18 — Correct the local H2 SQL Server compatibility mode
+
+**Technical analysis:** The user's Spring Boot startup log showed H2 2.2.224 rejecting `MODE=MSSQL` with `Unknown mode "MSSQL"`. H2 names this mode `MSSQLServer`; corrected the default local datasource URL. SQL Server JDBC profile configuration is unaffected.
+
+**Files and methods changed:**
+
+- `src/main/resources/application.properties` — default `spring.datasource.url` now selects H2 mode `MSSQLServer`.
+- `backend/README.md`, `documentation/document.markdown`, and `documentation/plan.markdown` — describe the corrected mode and record verification status.
+
+**Verification:** Confirmed the mode name against the H2 documentation. The backend could not be restarted in this coding environment because Java and Maven are unavailable; rerun `VisualizerApplication` in Eclipse to verify Flyway and JPA startup.
 
 ### 2026-10-17 — Initial project setup and this project document
 

@@ -4,7 +4,7 @@
 
 ### Product overview
 
-The frontend is the learner-facing interface for Java Code Memory Visualizer. It provides an editor and a visual walkthrough of the execution trace returned by the sibling Spring Boot backend, including AST metadata, source categories, per-step state deltas, blocked API findings, heap and stack snapshots, and output. It takes interaction and layout inspiration from `reference_for_frontend/`; it does not reuse the reference's C++ execution logic or stored trace format.
+The frontend is the learner-facing interface for Java Code Memory Visualizer. Visitors first see the login page, with signup available as a clear next step; only authenticated users enter the Java editor. It provides a walkthrough of the Spring Boot trace including metadata, state deltas, heap/stack snapshots, and output, plus signup, email verification, and password reset. It takes interaction and layout inspiration from `reference_for_frontend/`; it does not reuse the reference's C++ execution logic or stored trace format.
 
 ### Product goal and learner flow
 
@@ -12,17 +12,17 @@ A learner selects an example or edits Java source, submits it, and moves through
 
 ### Current scope
 
-The current UI includes Java samples, editable source with line numbers, run action, trace navigation and playback, a darker auto-scrolling active-line highlight, a Full analysis ON/OFF switch, compact function/variable frames in Normal mode, grouped parameters/locals and heap/static inspection in Full analysis mode, simplified Java type names, shape-coded values and indexed arrays, color-linked references, a double-click Focused box, backend loop ranges with frontend fallback in both modes, per-step variable/heap changes including field and array-index before/after values, source metadata, blocked API locations, stdout/errors, truncation state, and raw JSON. Normal mode shows captured array elements, nested multidimensional arrays, and object or collection fields directly inside the corresponding stack variable card; Full analysis mode continues to show references on stack and object contents in the heap. State-change details start collapsed and expand on demand. Java remains the input language; the C++ example is only a product-shape reference.
+The current UI includes Java samples, editable source with line numbers, run action, trace navigation and playback, a darker auto-scrolling active-line highlight, a Full analysis ON/OFF switch, compact function/variable frames in Normal mode, grouped parameters/locals and heap/static inspection in Full analysis mode, simplified Java type names, shape-coded values and indexed arrays, color-linked references, a double-click Focused box, backend loop ranges with frontend fallback in both modes, per-step variable/heap changes including field and array-index before/after values, source metadata, blocked API locations, stdout/errors, truncation state, and raw JSON. Normal mode shows captured array elements, nested multidimensional arrays, and object or collection fields directly inside the corresponding stack variable card; Full analysis mode continues to show references on stack and object contents in the heap. State-change details start collapsed and expand on demand. The account panel supports email/password signup, OTP verification/resend, sign-in/out, and password reset. Java remains the input language; the C++ example is only a product-shape reference.
 
 ## 2. Technical Flow and Configuration
 
 ### Frontend flow
 
 1. `src/main.jsx` mounts the React application.
-2. `src/App.jsx` owns source, sample selection, backend availability, API response, trace index, focused entity, and Full analysis mode. It sends `{ "code": "..." }` to `POST /api/visualize`, renders the mode-specific inspector, and keeps loop status visible in either mode.
+2. `src/App.jsx` owns source, sample selection, backend availability, API response, trace index, focused entity, Full analysis mode, account state, and CSRF token. It sends `{ "code": "..." }` to authenticated `POST /api/visualize`, renders the mode-specific inspector, and keeps loop status visible in either mode.
 3. `src/examples.js` holds bundled Java examples. `src/components/CodeEditor.jsx` renders source with line numbers and current-line highlighting.
 4. `src/components/TracePanels.jsx` renders simple Normal-mode function/variable frames or the richer Full analysis stack and heap views; in Normal mode it resolves reference IDs against the selected step heap snapshot and recursively embeds indexed array values or object/collection fields in the stack variable card, with a depth limit and cycle detection. It also renders the Focused box, loop status, and linked heap values. `App.jsx` displays backend line classifications, variable/heap deltas, parser metadata, and blocked API diagnostics. `src/loopAnalysis.js` prefers backend JavaParser loop ranges and falls back to source scanning for older responses.
-5. `vite.config.js` proxies `/api` and `/health` to `http://localhost:8080` during development. This keeps local browser requests same-origin and avoids requiring a backend CORS change for development.
+5. `src/components/AuthPanel.jsx` presents login first and links to signup, email verification, resend, and password reset. `App.jsx` waits for `/api/auth/me`; an unauthenticated visitor sees the account screen, and the visualizer appears after successful login. Mutating requests send the CSRF token and browser credentials; the backend's HttpOnly JWT cookie is not exposed to JavaScript. Trace submission also sends CSRF and cookie credentials. `vite.config.js` proxies `/api` and `/health` to `http://localhost:8080` during development. Production builds can set `VITE_API_BASE_URL`; configure backend CORS with the exact frontend origin.
 6. `src/styles.css` controls the responsive dashboard, compact stack/heap sizing, value shapes, and editor typography. The production build is emitted to `dist/`.
 
 ### Configuration and commands
@@ -32,6 +32,7 @@ The current UI includes Java samples, editable source with line numbers, run act
 - Open `http://localhost:5173`; keep the backend running on port 8080.
 - Create a production bundle with `pnpm run build`; output is in `dist/`.
 - `node_modules/` is local generated dependency content and is excluded from version control. `pnpm-lock.yaml` records the resolved dependency graph.
+- Set `VITE_API_BASE_URL` at build time to the backend origin for cloud deployment; local Vite proxying needs no value.
 
 ### API dependency
 
@@ -39,9 +40,68 @@ The frontend relies on `GET /health` and `POST /api/visualize` from `backend/`. 
 
 ### Verification state
 
-Earlier UI revisions passed `pnpm run build` with Vite 8.3.4 and the user manually ran multiple Java programs. The latest response-driven UI changes also passed `pnpm run build` with Vite 8.3.4 (20 modules transformed). Live browser integration with the changed backend is pending because Maven is unavailable in the current coding shell. The browser UI review could not be performed because Windows computer-use access to the user's Chrome window was denied; accessibility was checked in code, not with a screen reader.
+Earlier UI revisions passed `pnpm run build` with Vite 8.3.4 and the user manually ran multiple Java programs. For the latest login-first JWT UI, the production build passed after using Vite's runner config loader and an output directory in the writable temporary workspace (21 modules transformed). The ordinary project output path is still blocked by Windows permissions, and the standard command also received `EPERM` while writing its temporary config under `node_modules/.vite-temp`. Live browser integration with the changed backend remains pending because Java and Maven are unavailable in the current coding shell. The browser UI review could not be performed because Windows computer-use access to the user's Chrome window was denied; accessibility was checked in code, not with a screen reader.
+
+The frontend is wired to the backend JWT flow but has not been verified end-to-end. The local H2 and `local-sqlserver` profiles accept OTP `1234` for signup and password reset without email; hosted profiles require Brevo credentials and must not enable that local OTP.
 
 ## 3. Changes Made (Append Only)
+
+### 2026-10-18 — Make login the entry page and connect JWT authentication
+
+**Technical analysis:** Replaced the sign-in modal as the unauthenticated entry point with a login-first screen and a signup link. After account verification and login, the app opens the visualizer. The frontend restores auth state through `/api/auth/me`, sends CSRF headers and cookies with requests, and the backend now requires authentication for visualization requests. Login issues a short-lived HS256 JWT as an HttpOnly cookie; Spring Security is stateless and uses a JWT cookie filter. The local Spring profile accepts fixed OTP `1234` for signup and password reset and skips email delivery. The `azure` profile has no fixed OTP and requires a deployment-supplied JWT signing secret and email configuration.
+
+**Files and methods changed:**
+
+- `frontend/src/App.jsx` — `App`, `getCsrfToken`, `authRequest`, `runCode`, and auth initialization gate the visualizer and send authenticated, CSRF-protected requests.
+- `frontend/src/components/AuthPanel.jsx` — `AuthPanel` shows login first, exposes signup, and accepts four-digit local or six-digit emailed OTPs.
+- `frontend/src/styles.css` — `.auth-backdrop.standalone` and `.auth-loading` style the page-level login screen.
+- `backend/src/main/java/com/example/demo/config/SecurityConfiguration.java` — `securityFilterChain` enables stateless JWT-cookie auth, protects `/api/visualize`, and retains CSRF enforcement.
+- `backend/src/main/java/com/example/demo/config/JwtConfiguration.java` — configures HS256 `JwtEncoder` and `JwtDecoder` with a minimum 256-bit secret.
+- `backend/src/main/java/com/example/demo/config/JwtCookieAuthenticationFilter.java` — `doFilterInternal` restores request authentication from the HttpOnly JWT cookie.
+- `backend/src/main/java/com/example/demo/service/auth/JwtTokenService.java` — `writeAuthCookie`, `clearAuthCookie`, and `cookie` issue and clear expiring JWT cookies.
+- `backend/src/main/java/com/example/demo/controller/auth/AuthController.java` — `signup`, `login`, `logout`, and reset messaging use local OTP configuration and JWT cookies; OTP DTO validation accepts local four-digit or emailed six-digit values.
+- `backend/src/main/java/com/example/demo/service/auth/AuthService.java` — `sendChallenge` persists a hash of local `1234` and skips email only when the local profile enables it.
+- `backend/pom.xml`, `backend/src/main/resources/application.properties`, `application-local.properties`, `application-local-sqlserver.properties`, and `application-azure.properties` — add JWT support and profile-specific OTP/signing/cookie configuration.
+- Backend and frontend `documentation/document.markdown` and `documentation/plan.markdown` — update product and technical flows, phase-two status, and this append-only record.
+
+**Verification:** Frontend production build passed to a temporary output directory with Vite 8.3.4. Maven compilation, backend startup, migrations, and browser auth flow have not yet been run in this turn. The hosted profile requires `VISUALIZER_JWT_SECRET` (at least 32 UTF-8 bytes); the fixed OTP exists only in the local profiles.
+
+### 2026-10-18 — Refresh authentication verification state
+
+**Technical analysis:** Updated the current product and technical status to distinguish source integration from verified behavior. The UI performs login-first gating and sends cookie/CSRF credentials, but frontend bundle output, backend compilation, and live authentication still need local verification.
+
+**Files and components changed:**
+
+- `frontend/documentation/document.markdown` — current verification state and this append-only entry.
+- `frontend/documentation/plan.markdown` — phase-two login-first status and Stage 8 verification status.
+- Root `README.md` — authentication verification statement.
+
+**Verification:** The production bundle passed with Vite 8.3.4 (21 modules transformed) when written to the permitted temporary workspace. Writing to the usual project `dist` path was denied. Java, `javac`, and Maven are unavailable in this shell. No backend compile or live sign-in result is claimed.
+
+### 2026-10-18 — Verify frontend bundle with a permitted output directory
+
+**Technical analysis:** Retried the production build using Vite's runner config loader and an output folder in the permitted temporary workspace. This verifies the current React application bundles, while the ordinary `dist/` output path remains blocked by workspace filesystem permissions. It does not verify API integration or backend authentication.
+
+**Files and components changed:**
+
+- `frontend/documentation/document.markdown` — appended the build verification result and updated current verification state.
+- `frontend/documentation/plan.markdown` — updated Stage 8 build status.
+- Root `README.md` and `plan.markdown` — clarified build and backend verification state.
+
+**Verification:** `pnpm.cmd exec vite build --configLoader runner --outDir "C:\Users\Kaushik Sangmuli\.codex\visualizations\2026\10\17\01a14c32-da34-7df1-9c01-59ea069f3067\java-visualizer-frontend-build"` passed with Vite 8.3.4 (21 modules transformed). The temporary output directory was removed afterward. Backend Maven compilation and end-to-end authentication remain unverified.
+
+### 2026-10-18 — Add account access screens and authenticated API wiring
+
+**Technical analysis:** Added signup, email verification, verification-code resend, login, logout, and password-reset views. The frontend fetches the server-issued CSRF token, sends it on account mutations, includes session credentials, and supports a configured backend origin for cloud builds. Anonymous trace submission is unchanged.
+
+**Files and components changed:**
+
+- `src/components/AuthPanel.jsx` — `AuthPanel`, `submit`, and `resendCode` render and submit account flows.
+- `src/App.jsx` — `API_BASE`, `apiUrl`, `authRequest`, `logout`, session/CSRF initialization, and account controls.
+- `src/styles.css` — `.topbar-actions`, `.account-button`, `.auth-*` UI and responsive styles.
+- `frontend/documentation/plan.markdown` — records phase-two account UI and verification.
+
+**Verification:** `pnpm.cmd run build` passed with Vite 8.3.4 (21 modules transformed). Backend compilation and browser/auth integration remain pending because Java/Maven are unavailable in this shell and the database/Brevo settings are not configured.
 
 ### 2026-10-17 — Initial frontend project and documentation split
 
