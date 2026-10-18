@@ -1,0 +1,1 @@
+{"code":"public class TightLoop {\n    public static void main(String[] args) {\n        int i = 0;\n        while (true) { i++; }\n    }\n}"}

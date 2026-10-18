@@ -1,0 +1,1 @@
+{"code":"public class InfiniteLoop {\n    public static void main(String[] args) {\n        int i = 0;\n        while (i < 100000) {\n            i++;\n        }\n    }\n}"}

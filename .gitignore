@@ -1,0 +1,22 @@
+# Java backend (Maven / Eclipse)
+backend/target/
+backend/bin/
+backend/.classpath
+backend/.project
+backend/.settings/
+
+# React frontend (Vite / Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local-only settings and generated files
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

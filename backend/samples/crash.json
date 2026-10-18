@@ -1,0 +1,1 @@
+{"code":"public class Crash {\n    public static void main(String[] args) {\n        System.out.println(\"before\");\n        int[] values = {1, 2, 3};\n        System.out.println(values[5]);\n    }\n}"}

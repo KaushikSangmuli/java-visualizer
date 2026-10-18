@@ -1,0 +1,1 @@
+{"code":"public class CompileError {\n    public static void main(String[] args) {\n        int number = 5\n        System.out.println(number);\n    }\n}"}

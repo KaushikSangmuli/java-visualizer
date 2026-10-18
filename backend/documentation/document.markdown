@@ -1,0 +1,275 @@
+# Java Code Memory Visualizer — Project Document
+
+## 1. Product Documentation
+
+### Product overview
+
+**Java Code Memory Visualizer — Python Tutor for Java and DSA** is a learning application for tracing Java programs. The Spring Boot backend parses and checks submitted source, compiles it, runs it in a separate debuggee JVM, and returns a JSON execution trace enriched with source metadata and state changes. The React frontend lets learners edit code, navigate events, and inspect the current stack, variables, heap, static fields, and output. Backend Stages 1–8 provide the current planned product workflow.
+
+### Product goal
+
+Help a learner understand how a Java or data-structure program executes by showing the current source line and changing execution state. The frontend and backend are separate projects in one workspace; the UI consumes the existing API contract.
+
+### Users and primary flow
+
+A learner selects a sample or enters Java source in the editor and chooses **Run & visualize**. The frontend sends the source to `POST /api/visualize` through the Vite development proxy. The service validates and compiles it, starts it under the Java Debug Interface in a separate process, and returns a JSON result. The learner steps or plays through the trace to inspect source lines, frames, values, heap/static fields, and output. The UI displays compilation failures, runtime exceptions, and truncation states. `GET /health` reports backend availability.
+
+### API contract
+
+- `GET /health` returns `{"status":"ok"}`.
+- `POST /api/visualize` accepts JSON with a `code` field, for example:
+
+  ```json
+  {"code":"public class Main { public static void main(String[] args) { System.out.println(\"Hello\"); } }"}
+  ```
+
+- The response uses camelCase fields, including `status`, `message`, `errors`, `trace`, `truncated`, `truncatedReason`, `exception`, and `stdout`.
+- The defined status values are `ok`, `compile_error`, `runtime_error`, `blocked_api`, `busy`, and `error`. The controller returns the service response for handled visualization outcomes.
+- A trace event contains a zero-based step index, source line, event name, stdout captured up to that event, `frames`, an `explanation`, `returnValue` where applicable, and a bounded `heap` snapshot. Each frame contains a method/class/return type/source line and visible variables; frames are ordered active method first, then callers. Heap values use `referenceId` to link frame/static/field/array references to identity-deduplicated heap objects.
+- Successful responses also contain JavaParser-derived `metadata` (methods, loops, branches); trace events expose `lineType`, `variableChanges`, and `heapChanges` with object-field/array-index before-and-after values, ending with an `end` event. Blocked source includes `blockedApis` with API names, reasons, and source lines.
+
+### Current planned scope
+
+- Reject empty source and enforce a configurable source-length limit.
+- Locate a supported `main` method, including nested classes and accepted argument-array spellings.
+- Compile submitted code with the JDK compiler API and return diagnostics on compilation failure.
+- Trace line events in a separate JVM using JDI, with configurable step, output, and runtime limits.
+- Return captured stdout and uncaught exception details.
+- Remove the per-request temporary compilation directory when processing finishes.
+- Capture user-visible stack frames, parameters, visible locals, and `this` where applicable.
+- Emit method entry (`call`) and exit (`return`) events with explanations and the return value when supported by the debuggee VM.
+- Limit each displayed stack snapshot to at most 50 frames.
+- Traverse heap objects reachable from visible frame values and user-class static fields; represent arrays, collection internals, user objects, aliases, and cycles without recursive JSON expansion.
+- Include static fields declared by user classes and report partial snapshots when configured object, depth, or array-element limits are reached.
+- Parse source into method/loop/branch metadata and detect restricted APIs with an AST-based defense-in-depth blocklist.
+- Enrich trace events with source line types, loop/branch explanations, variable and heap changes, and a final end event.
+- Bound concurrent traces and per-client request rates, configure CORS, run as a non-root container user, and document container restrictions.
+- Cover parsing, source handling, metadata, enrichment, and representative API integration scenarios with JUnit 5.
+
+The Striver’s DSA sheet, premium company-wise lists, and LeetCode question browser are future product scope recorded in the plan and are not part of this implementation request.
+
+### Product limitations and safety
+
+The trace provides source-line events, stack/variable snapshots, method boundaries, return values, bounded heap graphs, user-class static fields, source classifications, and state deltas. The API blocklist, timeout, process limits, request limiting, CORS, and non-root container are defense in depth and do not make arbitrary Java execution safe. Deploy only with an OS/container security policy that restricts network access, CPU, memory, process count, and writable paths; use trusted code during development.
+
+## 2. Technical Flow and Configuration
+
+### Runtime flow
+
+#### Frontend request and display flow
+
+1. `frontend/src/App.jsx` holds the editable source, selected sample, backend health state, returned response, and selected trace index.
+2. `frontend/src/components/CodeEditor.jsx` renders a line-numbered editor and highlights the active trace line; selecting a sample loads Java source from `frontend/src/examples.js`.
+3. **Run & visualize** sends `{ "code": "..." }` to `/api/visualize`. In development, `frontend/vite.config.js` proxies `/api` and `/health` to `http://localhost:8080`; this avoids a separate CORS configuration.
+4. The selected trace event drives the line indicator, source context, method stack, visible variables, heap/static-field view, return value, and console output. Reference IDs navigate from a variable/field to its heap object. The raw response can be expanded for inspection.
+
+#### Backend flow
+
+1. Spring Boot starts `backend/src/main/java/com/example/demo/VisualizerApplication.java` in the root package `com.example.demo`, allowing component scanning across its subpackages.
+2. `VisualizeController` handles `GET /health` and accepts the optional `VisualizeRequest` body on `POST /api/visualize`; it passes the remote address to request admission.
+3. `VisualizeService.visualize` rejects missing/blank or over-limit source. `SourceHelper.strip` masks comments and literals while preserving source positions; `SourceHelper.findMain` identifies the binary launch class and Java filename. `CodeInspector.inspect` uses JavaParser to produce method/loop/branch metadata and AST-based blocked API findings.
+4. `RequestAdmissionService.acquire` applies the configured per-client window and concurrency semaphore. Rejected requests return a handled `busy` response. Accepted requests create a unique temporary directory with `Files.createTempDirectory`, write source beneath `src/`, and blank a package declaration without shifting line numbers.
+5. `CompilerService.compile` obtains `ToolProvider.getSystemJavaCompiler()`, creates the classes directory, and compiles in-process with debug metadata, UTF-8 encoding, annotation processing disabled, Java 17 API/bytecode targeting, and output directed to the temporary classes directory. Compilation diagnostics become model records.
+6. `Tracer.trace` launches the compiled main class with the JDI `CommandLineLaunch` connector. The user program runs in a separate JVM with bounded heap/stack settings, suspended startup, closed standard input, and stdout/stderr drains.
+7. JDI class-prepare handling installs a breakpoint at the main method. The tracer records the first breakpoint as a `call` step, then recreates count-filtered line-step requests. Method entry/exit requests capture user method boundaries; exit return values are mirrored through JDI when supported. At each event, the tracer reads up to 50 user frames and their visible variables while the debuggee is suspended. It walks reachable object fields/array elements and static fields declared by loaded user classes using JDI mirrors, deduplicating by object identity to preserve aliases/cycles. It does not invoke debuggee methods.
+8. Uncaught exceptions are reported using debuggee frame information and the exception's stored message field. When execution ends or a configured limit is reached, the tracer stops the debuggee as needed and returns its trace/result.
+9. `TraceEnricher.enrich` adds source line classifications, approximate loop/branch explanations, consecutive variable and heap deltas, and a final `end` event. The service always removes temporary files and releases its admission permit in `finally`.
+
+### Project layout
+
+```text
+java-visualizer/
+├── backend/
+│   ├── pom.xml
+│   ├── README.md
+│   ├── samples/
+│   └── src/main/java/com/example/demo/...
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.js
+│   └── src/ (React UI and Java examples)
+├── reference_for_frontend/ (provided visual reference, kept separate)
+├── README.md
+├── document.markdown
+├── plan.markdown
+├── .gitignore
+└── (reference assets are not part of the build)
+```
+
+Java package names map to real nested directories such as `backend/src/main/java/com/example/demo/service`; the dots are not a literal directory name. The frontend is an independent React/Vite project and does not change Java package structure.
+
+### Build and runtime configuration
+
+- Maven project; Spring Boot parent `3.2.5`; Spring Web provides the HTTP API and Jackson JSON support. JavaParser core supplies AST inspection; JUnit 5 and MockMvc arrive through `spring-boot-starter-test`.
+- JDK 21 is the intended runtime/compiler installation; Java source and target bytecode are configured for Java 17.
+- `maven.compiler.release` remains intentionally empty; `maven.compiler.source` and `maven.compiler.target` are `17`, preserving access to JDI APIs from the full JDK during compilation.
+- Compilation uses `javax.tools.JavaCompiler` with `-g`, `-encoding UTF-8`, `-proc:none`, `--release 17`, and `-d <classesDir>`.
+- JDI is provided by the JDK's `jdk.jdi` module. The debuggee runs separately with `-Xmx128m`, `-Xss1m`, UTF-8 encoding properties, and a classpath pointing at compiled temporary classes.
+- Run Maven commands from `backend/`: `mvn -q clean compile` and `mvn spring-boot:run`.
+- The frontend uses React 19 and Vite 8. Run `npm install` and `npm run dev` from `frontend/`; Node.js 20.19+ is required by the selected Vite version. The Vite development proxy forwards `/api` and `/health` to port 8080.
+
+### `application.properties`
+
+| Property | Default | Purpose |
+|---|---:|---|
+| `server.port` | `8080` | HTTP port |
+| `visualizer.max-code-length` | `20000` | Maximum submitted source length in characters |
+| `visualizer.max-steps` | `2000` | Maximum recorded line steps |
+| `visualizer.max-stdout-chars` | `20000` | Maximum captured stdout characters |
+| `visualizer.timeout-ms` | `10000` | Hard execution deadline in milliseconds |
+| `visualizer.max-displayed-frames` | `50` | Maximum user frames included in each trace event |
+| `visualizer.max-heap-objects` | `500` | Maximum object nodes in each event's heap graph |
+| `visualizer.max-array-elements` | `100` | Maximum elements captured per array |
+| `visualizer.max-heap-depth` | `8` | Maximum reference depth expanded from a frame/static root |
+| `visualizer.max-concurrent` | `4` | Maximum simultaneous debuggee sessions |
+| `visualizer.rate-limit-requests` | `60` | Requests per client within the fixed time window |
+| `visualizer.rate-limit-window-ms` | `60000` | Per-client rate-limit window |
+| `visualizer.rate-limit-max-clients` | `10000` | Maximum tracked client windows |
+| `visualizer.cors.allowed-origins` | local Vite origins | Comma-separated browser origins allowed by CORS |
+
+### Verification state
+
+The installed JDK 21 executable and `javac` were located and reported version `21.0.12.1`; `jdk.jdi@21.0.12.1` is present. Maven is not on this task shell's PATH and no Maven executable was found in the usual install/cache directories, so the modified backend has not been built or launched here. The user previously verified the pre-enrichment Factorial trace live. The new Stage 5–8 tests and sample matrix are pending a local `mvn -q test` / Eclipse Maven run. The latest frontend production build passed; browser/API integration with the modified backend remains pending.
+
+## 3. Changes Made (Append Only)
+
+### 2026-10-17 — Initial project setup and this project document
+
+**Product/technical analysis:** Created the initial Stage 1–2 Maven/Spring Boot project from the supplied workspace files. Migrated package declarations to `com.example.demo` and the `controller`, `model`, `service`, and `tracer` subpackages; added the missing request/response/trace/error model records; wired the compiler and tracer as Spring services; aligned execution limits with the requested properties; added project README, Maven/Eclipse setup guidance, `.gitignore`, and sample programs/requests. Existing originals in the workspace were preserved. The project has not been built or run because Java and Maven were unavailable, so runtime behavior and sample expectations remain unverified.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/VisualizerApplication.java` — package declaration; retained `main` as the Spring Boot entry point.
+- `src/main/java/com/example/demo/controller/VisualizeController.java` — package/import updates; retained `visualize` and `health` endpoint methods.
+- `src/main/java/com/example/demo/service/VisualizeService.java` — package/import updates; constructor now injects `CompilerService` and `Tracer` and reads timeout/output settings; `visualize` uses those configured limits and carries truncation reason into the response; `deleteQuietly` retains temporary-directory cleanup.
+- `src/main/java/com/example/demo/service/CompilerService.java` — package/import updates and Spring service registration; `compile` retains in-process Java compilation and diagnostics.
+- `src/main/java/com/example/demo/service/SourceHelper.java` — package update; retained `strip`, `findMain`, and `blankPackageLine` logic.
+- `src/main/java/com/example/demo/tracer/Tracer.java` — package/import updates and Spring service registration; `trace`, `Run.execute`, and `Run` constructor now accept the configured timeout and stdout cap; output capture uses that configured limit. Existing launch, event handling, and cleanup logic was retained.
+- `src/main/java/com/example/demo/model/VisualizeRequest.java`, `VisualizeResponse.java`, `TraceStep.java`, `CompileError.java`, and `ExceptionInfo.java` — added DTO records because these files were absent from the supplied workspace.
+- `pom.xml`, `src/main/resources/application.properties`, `README.md`, `.gitignore`, and `samples/*` — added/updated project configuration, documentation, hygiene rules, and sample inputs.
+- `document.markdown` — added this product/technical/change record.
+
+**Verification:** Package declarations were checked against physical source directories. Build and runtime checks were not run because the required executables were unavailable.
+
+### 2026-10-17 — Fix compiler-reported stderr pump constructor mismatch
+
+**Technical analysis:** The first Maven compile reported that the stderr `OutputPump` call supplied two arguments although the updated constructor requires the stream, capture flag, and character limit. The stderr stream is drained but intentionally not captured, so the call now passes `0` as its unused capture limit. This resolves the signature mismatch without changing stdout capture or trace behavior.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/tracer/Tracer.java` — `Run.execute` now constructs the stderr pump with `new OutputPump(process.getErrorStream(), false, 0)`.
+- `document.markdown` — appended this analysis to the change history.
+
+**Verification:** The Maven build could not be rerun from the command environment because Maven is unavailable on PATH. The previous Eclipse Maven build had reached compilation and reported the constructor mismatch. Rerun `mvn -q clean compile` in Eclipse or PowerShell to verify the fix.
+
+### 2026-10-17 — Implement Stage 3 stack and method snapshots
+
+**Technical analysis:** Extended each trace event with a stack snapshot ordered from the active method to its callers. While the debuggee is suspended, the tracer reads method/class/return-type/line metadata, visible local variables and parameters, and `this` for instance methods. Method-entry and method-exit requests generate `call` and `return` events with explanations; the return value is read from JDI only when the target VM reports support. Object values are represented with safe labels rather than invoking application methods. Frame snapshots are capped at 50, with a configurable limit clamped to that maximum. This does not add heap expansion or static-field snapshots (Stage 4).
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/TraceStep.java` — added `frames`, `explanation`, and `returnValue` response fields.
+- `src/main/java/com/example/demo/model/FrameSnapshot.java` and `VariableSnapshot.java` — added records for method frames and visible values.
+- `src/main/java/com/example/demo/tracer/Tracer.java` — `trace` and `Run` accept the displayed-frame limit; `Run.execute` registers method entry/exit requests; `onBreakpoint`, `onMethodEntry`, `onMethodExit`, `onStep`, and `onException` record enriched events; `snapshotFrames` and `displayValue` build safe snapshots.
+- `src/main/java/com/example/demo/service/VisualizeService.java` and `src/main/resources/application.properties` — added `visualizer.max-displayed-frames` and passed it into tracing.
+- `plan.markdown`, `README.md`, and `document.markdown` — added the staged plan and updated current scope/technical flow; this entry is appended to the change history.
+
+**Verification:** Compiled all main Java source files using JDK 21 `javac` with `-source 17 -target 17` and cached Maven dependencies. Compilation succeeded with the warning that the system modules path is not set with `-source 17`. The live Stage 3 API response has not been run; restart the Eclipse application with the updated classes before checking method/variable snapshots.
+
+### 2026-10-17 — Confirm Stage 3 Factorial runtime response
+
+**Technical analysis:** The user submitted `samples/factorial.json` after restarting the Eclipse application and provided the API response. The trace includes `main` and nested recursive `fact` frames, parameter values `n = 3`, `2`, and `1`, `return` events with values `1`, `2`, and `6`, the caller local `result = 6`, and final stdout `fact(3) = 6`. This confirms the Stage 3 call-stack and return-value path works for this sample. It does not verify all Java constructs, nested-class tracing, or stack truncation above 50 frames.
+
+**Files and methods changed:**
+
+- `plan.markdown`, `README.md`, and `document.markdown` — updated Stage 3 status and verification evidence; appended this change record. No Java implementation changed for this verification update.
+
+**Verification:** Confirmed from the user's live API response. The shell sandbox attempts did not prevent the implementation: a JDK 21 `javac` compile of all main sources succeeded with Java 17 source/target settings. The command environment still does not expose Maven on PATH, so a Maven CLI build was not run there.
+
+### 2026-10-17 — Implement Stage 4 heap and static-field snapshots
+
+**Technical analysis:** Added a per-trace-event heap graph rooted at visible frame values and static fields declared by loaded user classes. Objects are keyed by JDI unique IDs so aliases and cycles resolve to the same graph node rather than recursive JSON. Primitive and string values remain readable values; other object references carry `referenceId` links to heap nodes. Arrays include their total length and a bounded prefix of elements. `java.util` objects are marked as collections and represented through their JDI-visible fields and nested arrays/nodes; this reads collection storage without invoking collection methods. Static fields are read directly through JDI mirrors. The snapshot reports when configured object-count, traversal-depth, or array-element limits produce a partial graph. Defaults are 500 objects, depth 8, and 100 elements per array. Added model records for memory values, heap objects/fields, static fields, and the aggregate heap snapshot. No Stage 5–8 behavior was added.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/TraceStep.java` — added the `heap` event field.
+- `src/main/java/com/example/demo/model/VariableSnapshot.java` — added nullable `referenceId` for linking visible object references.
+- `src/main/java/com/example/demo/model/MemoryValue.java`, `HeapFieldSnapshot.java`, `HeapObjectSnapshot.java`, `StaticFieldSnapshot.java`, and `HeapSnapshot.java` — added the structured Stage 4 snapshot model.
+- `src/main/java/com/example/demo/tracer/Tracer.java` — `trace` and `Run` accept heap limits; `record` captures heap state for each event; `snapshotFrames` adds variable reference IDs; `snapshotHeap` collects frame/static roots; `HeapBuilder.enqueue`, `value`, `expand`, `markTruncated`, and `kind` walk/deduplicate objects, arrays, and collection internals without running debuggee methods.
+- `src/main/java/com/example/demo/service/VisualizeService.java` and `src/main/resources/application.properties` — added and passed `visualizer.max-heap-objects`, `visualizer.max-array-elements`, and `visualizer.max-heap-depth`.
+- `plan.markdown`, `README.md`, and the product/technical sections of `document.markdown` — described Stage 4 scope, response shape, configuration, and verification state; this change entry is appended.
+
+**Verification:** `mvn -q clean compile` could not run because `mvn` is not available on PATH in this shell. A direct JDK 21 compile with Java 17 source/target settings was attempted and caught an unsupported `VirtualMachine.objectByID` call; the code was corrected to root from live suspended frames. Rerun the direct compile and use Eclipse Maven Update/Build to confirm the current version. Stage 4 runtime behavior remains unverified; do not infer a successful build or trace until those checks pass.
+
+### 2026-10-17 — Stage 4 compile verification update
+
+**Technical analysis:** The initial direct compiler attempt exposed and led to removal of the unsupported `VirtualMachine.objectByID` call. The next attempt compiled the source but the JDK compiler emitted an archive-close `AccessDeniedException` for an unrelated Maven plugin JAR in the local cache, so that result was treated as inconclusive. A retry outside the sandbox, excluding Maven plugin JARs from the application classpath, completed successfully. The code compiles with the installed JDK 21 using Java 17 source/target settings. The project has not been launched with the new classes, so Stage 4 runtime snapshots remain unverified. Maven CLI remains unavailable on PATH.
+
+**Files and methods changed:** No implementation changed during this verification update. The product/technical verification summaries in `plan.markdown`, `README.md`, and the first two sections of `document.markdown` now record the compile result. This entry is appended to the change history.
+
+**Verification:** Direct `javac` compilation of every file under `src/main/java` succeeded with exit code 0. The compiler emitted only the expected warning that the system modules path was not set with `-source 17`. `mvn -q clean compile`, starting Spring Boot, and submitting a Stage 4 request were not completed from this shell.
+
+### 2026-10-17 — Confirm Stage 4 response shape with Factorial
+
+**Technical analysis:** The user ran `samples/factorial.json` against the updated Eclipse application. The response has a `heap` object on all 19 events, represents the `args` reference as an empty `java.lang.String[]` node (`length: 0`), and shows primitive variables with `referenceId: null`. This verifies serialization and basic heap snapshot integration in the live request path. Factorial uses primitive locals and does not exercise user-defined object fields, user static fields, non-empty arrays, or collections; those Stage 4 behaviors remain to be checked separately.
+
+**Files and methods changed:** No Java implementation changed for this verification. The Stage 4 status/verification descriptions in `plan.markdown`, `README.md`, and the first two sections of `document.markdown` were updated, and this record was appended to the change history.
+
+**Verification:** Confirmed from the user's live `POST /api/visualize` response for `samples/factorial.json`; response status was `ok`, all trace events contained a heap snapshot, and the existing Factorial stdout and return values were present.
+
+### 2026-10-17 — Separate backend documentation from frontend documentation
+
+**Technical analysis:** Split the shared project documentation into backend-specific and frontend-specific product documents and stage plans. The backend product and technical sections now describe only the Java API, compiler, JDI tracer, configuration, and backend verification. Backend stages 1–8 remain intact. The frontend has its own staged plan and append-only technical change history. No Java source, API contract, or backend runtime configuration changed.
+
+**Files changed:**
+
+- `backend/documentation/document.markdown` — backend-only product/technical sections; retained prior backend change entries and appended this organizational change.
+- `backend/documentation/plan.markdown` — backend-only current status and stages 1–8.
+- `frontend/documentation/document.markdown` and `frontend/documentation/plan.markdown` — separate frontend product/technical documentation, history, and staged plan.
+- Root `README.md`, `backend/README.md`, and `frontend/README.md` — point to the documentation locations.
+
+**Verification:** Confirmed the four documentation files exist in their backend/frontend folders. No build was run for this documentation-only change.
+
+### 2026-10-17 — Record future DSA problem-library product scope
+
+**Technical/product analysis:** Added three post-completion product ideas to the backend plan: a Striver’s DSA sheet selector, premium company-wise question collections, and LeetCode problem-number selection with Java dry runs. These are explicitly future scope after the existing backend and frontend stages. No backend behavior, routes, or source code changed. The future work will need a permitted problem-content source and an entitlement decision for premium collections.
+
+**Files changed:**
+
+- ackend/documentation/plan.markdown — appended a future product scope section after the planned backend stages.
+- ackend/documentation/document.markdown — appended this change analysis.
+
+**Verification:** Documentation-only update; no build or runtime behavior changed.
+
+### 2026-10-17 — Implement backend Stages 5–8
+
+**Technical analysis:** Added JavaParser-based source metadata for methods, loops, branches, declarations, and returns, plus an AST blocklist for process creation/termination, reflection, native loading, filesystem, and network entry points. The blocklist reports source locations as `blocked_api` and is not a sandbox. Added trace enrichment with line classifications, loop/branch explanations, variable changes, heap object changes, named field/array-element before/after values, and a final `end` event. Added bounded concurrent debuggee admission, per-client rate limiting, configurable CORS, a non-root full-JDK Docker image, and restrictive runtime instructions. Added JUnit tests for source/main handling, AST metadata/blocking, trace enrichment, request limits, and API integration.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/service/CodeInspector.java` — `inspect`, `inspectImports`, `deniedImport`, `inspectCalls`, `inspectObjectCreation`, and `metadata` implement the AST inspection and blocklist.
+- `src/main/java/com/example/demo/service/TraceEnricher.java` — `enrich`, `lineType`, `explanation`, `variables`, `variableChanges`, `heapObjects`, and `heapChanges` add per-event metadata and deltas.
+- `src/main/java/com/example/demo/service/RequestAdmissionService.java` — `acquire`, `allowClient`, and `release` enforce request-window and concurrency bounds.
+- `src/main/java/com/example/demo/config/WebConfiguration.java` — `addCorsMappings` reads configurable origins.
+- `src/main/java/com/example/demo/service/VisualizeService.java` — `visualize` integrates inspection, admission, enrichment, and permit release.
+- `src/main/java/com/example/demo/service/CompilerService.java` — `compile` additionally targets Java 17 APIs/bytecode for submitted programs.
+- `src/main/java/com/example/demo/controller/VisualizeController.java` — `visualize` supplies the remote client address.
+- `src/main/java/com/example/demo/model/CodeMetadata.java`, `MethodMetadata.java`, `SourceRange.java`, `BlockedApi.java`, `VariableChange.java`, `HeapChange.java`, `HeapValueChange.java`, `TraceStep.java`, and `VisualizeResponse.java` — added additive metadata/change fields and DTOs.
+- `src/main/resources/application.properties`, `pom.xml`, `Dockerfile`, `.dockerignore`, `README.md`, `src/test/java/com/example/demo/service/*Test.java`, and `src/test/java/com/example/demo/integration/VisualizerIntegrationTest.java` — configuration, JavaParser dependency, non-root JDK container, build context, usage/safety guidance, and tests.
+- `documentation/plan.markdown` and `documentation/document.markdown` — updated stage status, technical flow, configuration, verification state, and this append-only entry.
+
+**Verification:** JDK 21.0.12.1 and `jdk.jdi` are available. `mvn -q test` could not run because Maven is not installed/on PATH in the coding shell; Docker build/runtime verification is also pending. Do not treat the backend stages as build-verified until Maven tests pass locally.
+
+### 2026-10-17 — Include field and array values in heap deltas
+
+**Technical analysis:** Expanded Stage 6 heap changes so an allocated or updated object reports the changed field names, array indices, and before/after values. Static field changes now use the same value-delta format. This makes the memory change stream actionable for the frontend instead of only naming the changed object identity.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/HeapChange.java` and `HeapValueChange.java` — added nested value details to heap-change records.
+- `src/main/java/com/example/demo/service/TraceEnricher.java` — `staticValues`, `heapChanges`, `objectValues`, `diffValues`, and `display` compute value-level deltas.
+- `src/test/java/com/example/demo/service/TraceEnricherTest.java` — verifies allocated and changed object-field values plus the final limit event.
+- `frontend/src/App.jsx` and `frontend/src/styles.css` — render named heap value changes and before/after values.
+- Backend and frontend `document.markdown` / `plan.markdown` files — updated current technical scope and recorded this change.
+
+**Verification:** The updated frontend production build passed with Vite 8.3.4 (20 modules transformed). Backend Maven tests remain unrun because Maven is unavailable in this coding shell.

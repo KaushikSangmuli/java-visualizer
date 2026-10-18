@@ -1,0 +1,1 @@
+{"code":"public class Factorial {\n    public static void main(String[] args) {\n        int n = 3;\n        int result = fact(n);\n        System.out.println(\"fact(\" + n + \") = \" + result);\n    }\n    static int fact(int n) {\n        if (n <= 1) return 1;\n        return n * fact(n - 1);\n    }\n}"}
