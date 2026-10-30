@@ -351,3 +351,20 @@ The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it h
 - Backend and frontend `document.markdown` / `plan.markdown` files — updated current technical scope and recorded this change.
 
 **Verification:** The updated frontend production build passed with Vite 8.3.4 (20 modules transformed). Backend Maven tests remain unrun because Maven is unavailable in this coding shell.
+
+### 2026-10-31 — Function call boxes in caller frames
+
+**Technical analysis:** Completed the function-call box started on 2026-10-25. Each frame in a trace event now has a `calls` list describing calls it made on its current line to user-written methods and constructors. A row is `evaluating` while the callee runs and `returned` (with its result) after the callee exits; it stays until the caller moves to another line. Every waiting caller in the stack keeps its row, so `main` still shows `fun_multi(4, 2)` while `fun_add` runs. Several calls on one line (for example `add(add(1, 2), 3)`) are listed in Java evaluation order and matched by source position, so repeated method names resolve correctly; a call on a line that runs again (one-line loop) replaces the previous row. Rows show argument values (`result = fun_add(0, 4)`, after return `result = 4 <= fun_add(0, 4)`) plus the source form (`result = fun_add(result, number)`). A receiving variable or `return` is shown only when the call is the whole assigned/returned value. Constructors show the created object (`n = Node@42 <= new Node(5)`). Library methods (`Math.max`, `println`) never create a user frame and therefore never get a row. Calls inside lambdas and field/static initializers are not attributed. Rows are tracked by stack depth from `main`; when recursion exceeds the 50 displayed frames, rows for the cut-off frames may be dropped.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/FunctionCallSnapshot.java` — `line`, `expression`, `state`, `returnValue`, `sourceExpression`.
+- `src/main/java/com/example/demo/model/FrameSnapshot.java` — `calls` list with a compatibility constructor.
+- `src/main/java/com/example/demo/service/CallSiteAnalyzer.java` — `analyze` lists method calls and object creations in post-order (evaluation order) with caller method/class, called method/class, display name, source text and `target`; `caller` skips lambdas/initializers; `target` only for direct assignment/declaration/return values.
+- `src/main/java/com/example/demo/service/FunctionCallTracker.java` — new; `apply`, `onCall`, `onReturn`, `dropFinishedGroups`, `withCalls` keep per-depth call rows across steps.
+- `src/main/java/com/example/demo/service/TraceEnricher.java` — `enrich(raw, metadata, truncated, source)` runs the tracker; the earlier single-frame `withFunctionCall` helper was removed.
+- `src/main/java/com/example/demo/service/VisualizeService.java` — passes the submitted source to the enricher.
+- `src/test/java/com/example/demo/service/FunctionCallTrackerTest.java` — evaluation order/targets, waiting callers, returned-state lifetime, nested calls, repeated line, constructor, quoted String/char arguments, void calls.
+- `samples/FunMulti.java` and `samples/fun_multi.json` — nested-call sample.
+
+**Verification:** Maven Central is blocked in the coding environment, so `mvn verify` was not run. The changed classes compiled with JDK 21 against a local JavaParser 3.17 jar (the project uses 3.26.3), and the real `Tracer` + `TraceEnricher` were run outside Spring on `FunMulti` and on a program covering recursion (`fact`), `add(add(1, 2), 3)`, `new Node(5)`, `n.twice()`, a void method with String/char arguments and a one-line loop; all rows matched the expected behaviour. The seven new test methods passed under a minimal JUnit stand-in. Run `mvn clean verify` locally to confirm with the real dependencies.

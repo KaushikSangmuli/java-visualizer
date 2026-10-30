@@ -220,3 +220,15 @@ The frontend is wired to the backend JWT flow but has not been verified end-to-e
 - `frontend/documentation/document.markdown` and `frontend/documentation/plan.markdown` — updated current behavior and appended this change analysis.
 
 **Verification:** Pending production build.
+
+### 2026-10-31 — Function call box UI
+
+**Technical analysis:** Each stack frame (Normal and Full analysis modes) renders the backend `calls` list below its variables, one row per call in execution order. A yellow row ("Waiting for return") shows the call with argument values, e.g. `result = fun_add(0, 4)`; a green row ("Returned") shows `result = 4 <= fun_add(0, 4)`. Hovering or keyboard-focusing a row shows the call as written in the source (`result = fun_add(result, number)`). The heading reads "Function calls" when there is more than one row. Variable cards are unchanged; a declared `result` variable keeps its own card.
+
+**Files and components changed:**
+
+- `src/components/TracePanels.jsx` — `FunctionCalls` renders rows with state label, value expression, source tooltip and an accessible label; used by `StackPanel` in both modes.
+- `src/styles.css` — `.function-calls`, `.function-call-state` (evaluating/returned), `.function-call-source` hover/focus tooltip.
+- `src/examples.js` — "Nested function calls and loop" example (`fun_multi` / `fun_add`), added 2026-10-25.
+
+**Verification:** `pnpm install`/`pnpm run build` could not run (npm registry blocked in the coding environment). All source files passed an esbuild JSX parse, and `StackPanel` was bundled with React 19 and rendered in headless Chromium for both modes, multiple rows and the hover tooltip. Run `pnpm run build` and check the "Nested function calls and loop" example in the browser locally.

@@ -57,14 +57,26 @@ function VariableBox({ variable, heap, onReference, onFocus }) {
   return <div className={`variable-box ${shape} ${inlineEntity ? `inline-${entity.kind}` : ''}`} style={style} role="group" tabIndex={0} aria-label={`${variable.name}, ${displayType(variable.type)}${inlineEntity ? `, ${entity.kind} contents shown inline` : ''}. Press Enter to focus.`} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onFocus(); } }} onDoubleClick={onFocus} title="Double-click or press Enter to focus"><div className="variable-box-heading"><strong>{variable.name}</strong><small>{displayType(variable.type)}</small></div>{inlineEntity ? <InlineEntity value={variable} heap={heap} onReference={onReference} /> : <Value value={{ ...variable, type: displayType(variable.type) }} onReference={onReference} />}</div>;
 }
 
+// Calls this frame made on its current line, in execution order. Values are shown; hovering
+// (or keyboard focus) reveals the call as written in the source, e.g. fun_add(result, number).
 function FunctionCalls({ calls = [] }) {
   if (calls.length === 0) return null;
-  return <section className="function-calls" aria-label="Active function calls">
-    <h5>Function call</h5>
-    {calls.map((call, index) => <div className={`function-call-state ${call.state}`} key={`${call.line}-${index}`}>
-      <span className="function-call-status">{call.state === 'returned' ? 'Returned' : 'Waiting for return'}</span>
-      <code>{call.expression}</code>
-    </div>)}
+  return <section className="function-calls" aria-label="Function calls made on this line">
+    <h5>{calls.length === 1 ? 'Function call' : 'Function calls'}</h5>
+    {calls.map((call, index) => {
+      const returned = call.state === 'returned';
+      const source = call.sourceExpression ?? call.expression;
+      return <div
+        className={`function-call-state ${call.state}`}
+        key={`${call.line}-${index}`}
+        tabIndex={0}
+        aria-label={`${returned ? 'Returned' : 'Waiting for return'}: ${call.expression}. Written as ${source}`}
+      >
+        <span className="function-call-status">{returned ? 'Returned' : 'Waiting for return'}</span>
+        <code>{call.expression}</code>
+        <span className="function-call-source" aria-hidden="true">{source}</span>
+      </div>;
+    })}
   </section>;
 }
 
