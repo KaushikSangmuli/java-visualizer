@@ -8,4 +8,12 @@ public record FrameSnapshot(
         String className,
         String returnType,
         int line,
-        List<VariableSnapshot> variables) {}
+        List<VariableSnapshot> variables,
+        List<FunctionCallSnapshot> calls) {
+
+    /** Retains source compatibility for callers constructing frames without call-site data. */
+    public FrameSnapshot(String method, String className, String returnType, int line,
+                         List<VariableSnapshot> variables) {
+        this(method, className, returnType, line, variables, List.of());
+    }
+}

@@ -1,0 +1,300 @@
+# Java Code Memory Visualizer — Phase Two Plan
+
+**Document purpose:** Product and technical plan for adding accounts, persistence, container packaging, CI/CD, and a first cloud deployment to the existing Java Code Memory Visualizer repository.
+
+**Status:** Phase-two implementation is underway. Email/password authentication now uses stateless JWT cookies, login-first UI, and a local-only OTP bypass. The frontend production build passed to a permitted temporary directory; backend/database/browser verification remains pending because JDK and Maven are unavailable in the coding shell. Cloud accounts/resources and provider credentials remain user-configured.
+
+**Repository root:** `java-visualizer/` (the directory containing `backend/`, `frontend/`, and this file).
+
+**Current application:** React + Vite frontend and Spring Boot 3.2.x backend. The backend compiles submitted Java and runs it in a separate debuggee JVM through JavaCompiler/JDI. Email/password and OTP authentication use local H2 or SQL Server/Azure SQL profiles; JWT-cookie issuance, login gating, migrations, email delivery, and browser flow still need runtime verification. Local H2 and `local-sqlserver` profiles accept OTP `1234`; hosted configuration must use the `azure` profile and an external signing secret. The Docker and safety design must preserve the JDK/JDI requirements and must not treat the AST blocklist as a sandbox.
+
+## 0. Selected low-cost services and push workflow
+
+- **Frontend — Azure Static Web Apps:** select **Free** when creating the app. Published quota: 100 GB bandwidth/month, 250 MB per deployed environment, up to 3 preview environments, 2 custom domains, and free TLS. The Free plan has no paid bandwidth-overage rate; check current quota behavior and GitHub/private-repository terms before deployment.
+- **Backend — Azure Container Apps:** select the **Consumption** workload profile, minimum replicas `0`, and a small maximum replica count. Monthly free grant: 180,000 vCPU-seconds, 360,000 GiB-seconds, and 2 million external HTTP requests per subscription. Avoid adding a dedicated profile/VNet unless its cost is accepted.
+- **Database — Azure SQL Database:** select **Apply offer / Free database** for an eligible subscription. For **Free limit reached behavior**, choose **Auto-pause the database until next month**; do not choose **Continue using for additional charges**. Allowance: 100,000 serverless vCore-seconds, 32 GB data, and 32 GB backup per database/month; up to 10 eligible databases per subscription.
+- **Email — Brevo:** select the **Free** plan for transactional email, currently up to 300 messages/day. Verify a sender address/domain and configure the API key as a backend secret; confirm any account onboarding/sender restrictions and current quota before use.
+- Limits are current published offers, may change, and are not a promise that every surrounding resource is free. Registry storage/egress, networking, domain registration, overages, and other subscription usage can cost money. Set budget alerts and verify the final review screen before provisioning.
+- **GitHub Actions:** add `.github/workflows/ci-cd.yml`, triggered by `push` to `main` and `pull_request`. Pull requests run checks; a green push to `main` deploys the frontend to Static Web Apps and the backend image/revision to Container Apps. Run versioned Flyway migrations as a controlled backend deployment job; never recreate the database. Brevo is configured through Container Apps secrets and is not independently deployed. GitHub Actions usage quotas are separate from Azure free grants and depend on the GitHub plan.
+- Prefer Azure OIDC/federated credentials for workflow login; use GitHub repository secrets only for the non-secret Azure identifiers required by the action. Keep SQL and Brevo credentials in Azure Container Apps secrets. The backend container requires an image registry (Azure Container Registry or GitHub Container Registry); include its storage/egress and private-image configuration in cost review.
+- **Domain:** optional for the first deployment. Use Azure-provided URLs at no domain cost; later map one purchased domain to `www` (frontend) and `api` (backend). Azure managed TLS is available for supported custom-domain configurations.
+
+Official quota references: [Static Web Apps quotas](https://learn.microsoft.com/en-us/azure/static-web-apps/quotas), [Container Apps billing](https://learn.microsoft.com/en-us/azure/container-apps/billing), [Azure SQL free offer FAQ](https://learn.microsoft.com/en-us/azure/azure-sql/database/free-offer-faq?view=azuresql), [Brevo transactional email](https://www.brevo.com/products/transactional-email/), and [GitHub Actions workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+
+## 1. Product Goal and Phase Scope
+
+Phase two changes the application into an account-based service. A visitor first sees login and can follow a signup link, verify an email address, log in, and recover access. The visualizer requires authentication. Later, a user can optionally save explicitly selected Java projects or visualizations; users must only access their own saved data.
+
+The first authentication experience should be ordinary email and password registration with email one-time-code verification. Password recovery uses a separate email one-time code. This is email-based account verification, not Google/Gmail social sign-in. Google OAuth and mobile-number identity/OTP are later additions and must fit an extensible identity model without requiring a redesign.
+
+The goal is a low-cost demonstration deployment, not a production security certification. Public hosting of arbitrary user Java remains blocked until execution isolation is reviewed and strengthened. The existing separate JVM, time/step/output limits, blocklist, and Docker image are useful controls but do not by themselves securely isolate hostile code from the host.
+
+### In scope
+
+- Relational persistence and versioned schema migrations.
+- Signup, email verification, login, logout, password reset, and account ownership checks.
+- OTP delivery through a transactional email service, with abuse controls.
+- Docker image(s) compatible with JavaCompiler and JDI.
+- GitHub Actions CI for backend and frontend; controlled deployment workflow.
+- Low-cost cloud pilot with HTTPS, managed database, secrets, monitoring, and budgets.
+- Documentation, configuration examples, and tests for the new behavior.
+
+### Not in this phase
+
+- Google OAuth/social login and phone-number OTP (keep the schema ready for these).
+- Premium/company question catalogs or curated DSA/LeetCode content.
+- Billing, subscriptions, paid plans, or monetization.
+- Storing every submitted program or trace automatically.
+- Publicly exposing arbitrary Java execution before the sandbox deployment gate is met.
+
+## 2. Database Recommendation and Data Plan
+
+### Recommendation
+
+**Recommended first database: Azure SQL Database using its SQL Server-compatible engine.** This matches the project owner's MSSQL preference and has a current free offer with up to 10 databases per Azure subscription. The published allowance is 100,000 serverless vCore-seconds, 32 GB data, and 32 GB backup storage per database per month. Configure the free-limit behavior to pause the database until the next month, monitor its usage, and set a billing alert; choosing continued use can incur charges above the free allowance. Check the offer's eligibility in the actual Azure subscription before committing to it.
+
+Use file-backed H2 by default for quick local account development; the `azure` Spring profile targets Azure SQL. The SQL Server migrations are authoritative for cloud deployment, so verify them against Azure SQL before release. Keep schema and persistence logic portable where practical. If the free Azure SQL offer is unavailable to the account or region, compare a small paid Azure SQL tier against PostgreSQL managed free tiers before switching engines. Do not put important user data on a temporary database tier without backups/export.
+
+### Data minimization rules
+
+- Do not persist raw source code or trace JSON for every run by default. A submitted program can contain personal, academic, or confidential content.
+- Save source code and an associated trace only when the signed-in user explicitly chooses **Save**. Set a documented size limit and retention/deletion behavior.
+- Do not log passwords, OTPs, access/refresh tokens, full submitted code, or full trace payloads.
+- Keep only the security/audit information needed to investigate account changes and abuse; define retention before collecting client IP or device information.
+- Provide account deletion that removes or anonymizes owned project/run data according to the retention policy.
+
+### Initial logical schema
+
+Use UUID/uniqueidentifier primary keys, UTC timestamps, foreign keys, unique constraints on normalized identifiers, and indexes for ownership and expiry queries. Names are logical; final columns and nullability are decided during Stage 1.
+
+| Table | Purpose and fields to consider |
+|---|---|
+| `app_user` | Account id, normalized email, email verification time, password hash (nullable only if a future social-only account is supported), status, created/updated/deleted timestamps. Store no plaintext password. |
+| `user_identity` | Extensible login identities: user id, provider (`local_email`, later `google`, later `phone`), provider subject/normalized identifier, verified timestamp. Unique provider + subject. Do not assume Gmail OAuth and email OTP are the same identity mechanism. |
+| `verification_challenge` | Signup verification and password-reset challenges: user/destination, purpose, code hash, created/expiry/consumed times, failed attempts, resend count/next-allowed time. Store a hash, never the delivered OTP. |
+| Server-side session tables | Not used. Authentication is stateless JWT; password-reset does not immediately revoke already issued JWTs, which remain valid until their 30-minute expiry. |
+| `saved_project` | User-owned project label, created/updated time, optional archive/delete time. |
+| `saved_source` | User-owned source file/project id, safe filename, Java source, language/version metadata, created/updated time. Save only on explicit action. |
+| `saved_visualization` | Optional explicitly saved run: source id or source snapshot, backend/trace schema version, status, timestamp, and bounded trace JSON or compressed payload. Establish quotas/retention and size limits before enabling. |
+| `security_event` | Minimal events such as signup, verification, login failure/success, password reset, logout, and session revocation. Exclude credentials and code. Apply short retention. |
+
+Do not add a separate `otp` table with plaintext codes. Verification challenges are one-time, purpose-bound, hashed, expire quickly, have a small attempt limit, are invalidated after success, and are throttled by account and network origin. Avoid account enumeration in signup, login, and password-reset responses.
+
+### Persistence technology
+
+- Spring Data JPA/Hibernate for domain persistence; SQL Server JDBC driver for Azure SQL/SQL Server connectivity.
+- Flyway migrations as the schema source of truth. Do not use Hibernate `ddl-auto=update` in deployment.
+- Externalize JDBC URL, username, and password through environment/secret storage. Never commit credentials.
+- Add separate local/test and cloud profiles; keep the existing trace-specific `visualizer.*` limits independent of database settings.
+- Use transaction boundaries in services, not controllers. Enforce record ownership in backend queries, not only in the UI.
+
+## 3. Authentication and OTP Decisions
+
+### First release
+
+1. Signup accepts email + password, normalizes the email, creates an unverified account, and sends an email verification OTP.
+2. Verification consumes the challenge and marks the email identity verified.
+3. Login accepts email + password and issues a short-lived signed HS256 JWT in an HttpOnly cookie. Keep the signing secret outside source control; the Azure profile requires `VISUALIZER_JWT_SECRET`.
+4. Logout clears the browser cookie. Since JWTs are stateless, an already copied token remains usable until its short expiry; add a token-version or revocation mechanism if immediate revocation becomes a requirement.
+5. Use Spring Security and a modern adaptive one-way password hash (Argon2id where available; otherwise a deliberately configured BCrypt cost). Enforce TLS, secure token handling, CSRF/CORS policy appropriate to the chosen browser token design, rate limits, and generic auth error text.
+6. `/health` and public auth bootstrap/signup/verification/login/password-reset routes do not require a JWT. `/api/visualize`, `/api/auth/me`, and other account routes require valid JWT authentication; retain CSRF protection because the browser sends the auth cookie automatically. Account deletion is deferred and is not part of the current implementation.
+7. In the local H2 and `local-sqlserver` development profiles only, use fixed OTP `1234` for signup and password-reset flows when email credentials are unavailable. Hosted profiles must never activate either local OTP profile; they use generated six-digit codes and the configured transactional email provider.
+
+### Email or phone OTP?
+
+Start with **email OTP**. For this application it is the better initial low-budget choice: it is global, requires no country-specific mobile routing, and transactional email currently has free entry plans. Brevo currently advertises 300 sends per day on its free plan; verify sender-domain requirements, daily quota, and account eligibility when configuring it. Do not send production OTP through a developer's personal Gmail inbox/SMTP account. A transactional provider/API is designed for application mail and provides sending logs and bounce handling.
+
+Treat SMS as a later option for phone verification or account recovery where product needs justify the cost. Firebase phone verification requires the pay-as-you-go billing plan for production SMS and bills per message; SMS rates vary by destination and provider. If the primary audience is India, check current India route pricing and any applicable sender/template registration obligations before enabling it. Use fictional/test numbers during development. Add per-phone, per-account, and per-IP throttles and spend caps.
+
+“Continue with Google” is a future OAuth/OpenID Connect feature. It is separate from sending a verification code to a Gmail address. The identity table should support it later without storing a Google password.
+
+## 4. Hosting and Cost Recommendation
+
+### Suggested low-cost pilot architecture
+
+- **Frontend:** Azure Static Web Apps Free, connected to the private GitHub repository with GitHub Actions. The current published Free plan includes static hosting, TLS, custom domains, and 100 GB bandwidth; private-repository publishing and GitHub account plan rules must be checked before choosing it. Cloudflare Pages or another static host can be compared if private Git integration has a plan constraint.
+- **Backend:** Azure Container Apps Consumption plan, deploying a custom Docker image. It currently grants the first 180,000 vCPU-seconds, 360,000 GiB-seconds, and 2 million external HTTP requests per subscription/month; it can scale to zero. Monitor usage and configure max replicas/concurrency so trace workload cannot create unexpected scaling charges.
+- **Database:** Azure SQL Database free offer described above. Use the pause-at-limit behavior to avoid automatic overage charges, understanding that the app's persistence operations become unavailable after the allowance is exhausted until the next month.
+- **Images:** Initially build and deploy through GitHub Actions to Azure Container Apps. Choose an image registry and retention policy as part of CI setup. Private container registry storage/egress can incur charges; include it in the budget review.
+- **Secrets:** Azure Key Vault or Container Apps secrets for database/email credentials. GitHub Actions should authenticate to Azure with OpenID Connect/federated identity rather than a long-lived client secret where feasible.
+- **Observability:** Application logs without code/credentials, Azure usage/budget alerts, health probes, and a deployment rollback procedure.
+
+Azure's monthly free grants are shared at subscription level, not reserved solely for this app. Some resources, network configuration, registry storage/egress, domain registration, email volume, and usage over the included amounts can still cost money. Set a small spend budget/alert and review every bill line. Free tiers are suitable for a demo/pilot, not an uptime or backup guarantee.
+
+### Alternatives and caveats
+
+- Render has a convenient free demo path, but its current free Postgres databases expire after 30 days and have no backups; free web services sleep after inactivity and are limited to 512 MB RAM. This is acceptable for disposable previews, not a place to keep real user accounts or saved projects.
+- If choosing PostgreSQL instead of the MSSQL preference, compare a managed PostgreSQL free tier and ensure backup/retention terms meet the project's needs. Switching should be a deliberate decision before migrations are established.
+- Keep all services in a nearby region where possible. Measure startup, JDI behavior, heap/memory use, and database wake-up latency before inviting external testers.
+
+## 5. Docker and Online Execution Safety Gate
+
+The existing backend runs user code in a child debuggee JVM but that JVM still shares the backend container's OS identity, filesystem, and network unless additional isolation is applied. A Docker image alone does not make this safe for arbitrary public submissions.
+
+Before public code execution, require a threat-model review and an execution boundary with no network, non-root identity, read-only base filesystem, isolated temporary workspace, strict CPU/memory/process/file limits, hard wall-clock kill, restricted syscalls/capabilities, and cleanup even on crash. Prefer one disposable isolated sandbox per execution (or a proven equivalent). Keep compiler/JDI support in the runtime image: use a full JDK 21 image, not a JRE-only image, because `JavaCompiler` and `jdk.jdi` are required. Do not mount application secrets or the host Docker socket into a user-code sandbox. If this safety gate is not ready, deploy privately for trusted demonstrations and disable anonymous execution on the public endpoint.
+
+## 6. CI/CD Plan
+
+Use GitHub Actions in the existing private repository. Begin with CI only; deployment must be a separately controlled job/environment.
+
+### Pull request / push CI
+
+- Backend job: set up JDK 21, cache Maven dependencies, run `mvn -B clean verify` from `backend/`, and retain test reports on failure.
+- Frontend job: set up the selected Node LTS and pnpm, install using the lockfile (`pnpm install --frozen-lockfile`), run lint/type checks if configured, and `pnpm run build` from `frontend/`.
+- Docker job: build the backend image and validate that it contains JDK 21/JDI/compiler modules and runs as non-root. Add dependency/security scanning as a later hardening increment.
+- Trigger on pull requests and pushes to `main`; use least-privilege workflow permissions, pinned action versions, and no production secrets in pull-request jobs from untrusted forks.
+
+### Deployment workflow
+
+- Run only after CI is green on the protected main branch or by an approved manual dispatch.
+- Build/tag an immutable container image with commit SHA, push to the chosen registry, deploy to a staging Container App, and smoke-test `/health` and authenticated/API behavior.
+- Promote to production only after review and sandbox gate. Add rollback to the previous image and expand database schema with backward-compatible migrations.
+- Authenticate to Azure using GitHub Actions OIDC/federated credentials; keep cloud secrets out of workflow YAML and Git.
+- Monitor GitHub Actions minutes/storage for the private repository because included quotas depend on the account plan; avoid assuming unlimited free CI.
+
+## 7. Ordered Implementation Stages
+
+### Stage 0 — Decisions and baseline
+
+- Confirm database choice (recommended: Azure SQL), target hosting region, frontend/backend origins, repository branch protection, and whether public visualization remains anonymous.
+- Confirm Azure subscription eligibility, spending guardrails, intended retention for user code/runs, and acceptable login/session behavior.
+- Record current build/test baselines. Export a database backup before any production migration once data exists.
+- **Exit criteria:** decisions and monthly budget alert are written down; no resource is provisioned yet.
+
+### Stage 1 — Database foundation
+
+- Add JPA, SQL Server JDBC, Flyway, and any version-specific Flyway SQL Server module compatible with the Spring Boot-managed version.
+- Design/migrate the initial identity, verification challenge, saved project/source, and security event schema. Avoid persisting stateless JWTs in the database.
+- Add externalized datasource configuration and local test profile; validate migrations against a real SQL Server-compatible database.
+- Add indexes, foreign keys, unique normalized identities, transaction boundaries, ownership query patterns, and account-data deletion behavior.
+- **Exit criteria:** clean database migration, persistence tests, no secrets in Git, and backup/export procedure documented.
+
+### Stage 2 — Authentication and account APIs
+
+- Add Spring Security and registration, email verification, login, JWT logout, password reset, and current-user flows.
+- Add email provider adapter and local development mail sink; do not send real mail in tests.
+- Add short OTP expiry, hashed OTPs, one-time purpose binding, attempt/resend limits, generic responses, login throttling, password hash policy, CSRF protection, a short JWT lifetime, and a local-only fixed OTP bypass.
+- Defer account deletion pending an explicit product/authorization decision; it has no endpoint in the current implementation.
+- Secure saved-project endpoints and prove cross-user access is denied. Keep `/health` public.
+- **Exit criteria:** integration tests cover successful and failed flows, expiry/replay, rate limits, JWT expiry/logout behavior, and data ownership. Assess whether immediate JWT revocation is needed before public launch.
+
+### Stage 3 — Docker packaging and local deployment
+
+- Review/update backend `Dockerfile` for reproducible multi-stage image, JDK 21 runtime, Java compiler and JDI module availability, non-root user, health check, and configurable port.
+- Add local Docker Compose for backend, SQL Server-compatible development database, and optional local mail sink. Keep secrets in local ignored environment files.
+- Test compile and trace of supplied samples inside the image, including Windows-to-Linux path/quote assumptions and child-JVM cleanup.
+- **Exit criteria:** clean image build, local compose startup, DB migration, auth smoke test, sample traces, and resource-limit checks.
+
+### Stage 4 — GitHub Actions CI
+
+- Add independent backend, frontend, and image-build workflows or jobs as described above.
+- Test workflows on a branch/PR and on main; document private Actions quota monitoring and failure diagnostics.
+- Add branch protection requiring successful CI before merges.
+- **Exit criteria:** a clean PR runs the whole CI successfully without developer-machine state.
+
+### Stage 5 — Cloud staging deployment
+
+- Provision Azure Static Web Apps, Azure Container Apps Consumption, Azure SQL free offer, a registry, email sender, and secrets using a documented checklist or infrastructure-as-code.
+- Configure TLS, allowed CORS origins, database firewall/networking, minimum/maximum replicas, budget/usage alerts, logging retention, and private test access.
+- Use a private staging environment while the code-execution sandbox gate is incomplete.
+- **Exit criteria:** deployed health/auth/OTP/persistence/sample-trace smoke tests, budget alarms, tested rollback, and an explicit security decision on public execution.
+
+### Stage 6 — Controlled continuous deployment
+
+- Add OIDC-based GitHub Actions deployment to staging, approval gate for production, immutable image tags, compatible DB migration ordering, smoke checks, and rollback.
+- Keep production deployment manual/approved until stability and safety are demonstrated.
+- **Exit criteria:** documented and rehearsed deployment, rollback, and database recovery procedures.
+
+### Stage 7 — Production readiness review
+
+- Review sandbox isolation, threat model, rate limits, CORS/CSRF/token design, secrets, data minimization, privacy/retention/deletion, backups, observability, and incident response.
+- Validate cloud spend under expected concurrent debugger sessions; confirm the database's free-limit behavior and what users see when it pauses.
+- Only then decide whether to invite the public or remain a private demo.
+- **Exit criteria:** all critical security and recovery items accepted, or a clear list of restrictions for the demo.
+
+## 8. Completion Checklist
+
+- [ ] Database and schema decision recorded; Azure SQL free-offer eligibility checked.
+- [ ] Migrations, backup/export, retention, and account deletion policy implemented.
+- [ ] Password and OTP secrets are never stored/logged in plaintext.
+- [ ] Email OTP delivery works in staging; email quota and sender domain are verified.
+- [ ] Authentication/session security and account ownership have automated tests.
+- [ ] Docker image includes JDK/compiler/JDI and does not run as root.
+- [ ] User-code execution isolation is approved before public execution is enabled.
+- [ ] GitHub Actions CI passes on a clean runner; secrets use OIDC/secret store.
+- [ ] Staging health, authentication, persistence, and trace smoke tests pass.
+- [ ] Cost alerts, rollback, backups, and deployment instructions are verified.
+
+## 9. Current Pricing and Reference Links
+
+Pricing and free tiers change; the figures below were checked on **2026-10-18** and must be rechecked before provisioning. Cloud location, tax, account eligibility, and usage affect final cost.
+
+- [Azure SQL Database free offer](https://learn.microsoft.com/en-us/azure/azure-sql/database/free-offer) — per-database monthly compute/storage allowance, up to ten per subscription, and pause-or-pay behavior.
+- [Azure Container Apps billing](https://learn.microsoft.com/en-us/azure/container-apps/billing) — monthly Consumption free grants and scaling/billing behavior.
+- [Azure Static Web Apps pricing](https://azure.microsoft.com/en-us/pricing/details/app-service/static/) and [hosting plans](https://learn.microsoft.com/en-us/azure/static-web-apps/plans) — free static hosting features and limits.
+- [Brevo pricing plans](https://help.brevo.com/hc/en-us/articles/208589409-About-Brevo-s-pricing-plans) — current free email send allowance and transactional email availability.
+- [Firebase pricing](https://firebase.google.com/pricing) and [Authentication limits](https://firebase.google.com/docs/auth/limits) — phone-auth billing mode and quotas; use this only as a phone OTP comparison, not as the planned primary identity database.
+- [GitHub Actions billing and usage](https://docs.github.com/en/actions/concepts/billing-and-usage) — private repository free-minute and storage quotas depend on account plan.
+- [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
+
+## 10. Change History
+
+### 2026-10-18 — Set login-first UI and JWT authentication direction
+
+**Technical analysis:** Updated phase-two product flow so visitors see login first and signup is an explicit option. Authenticated requests now use a short-lived HttpOnly JWT cookie with CSRF protection; `/api/visualize` requires authentication. Updated the plan to document the local OTP `1234` bypass and hosted secret/email requirements. JWT logout clears the cookie; because the token is stateless, a copied token remains valid until expiry.
+
+**Files changed:**
+
+- `plan.markdown` — revised phase-two product goals, proposed schema notes, auth design, and Stage 1–2 exit criteria; appended this analysis.
+- `README.md` — updated account and browser auth descriptions.
+- `backend/documentation/plan.markdown`, `backend/documentation/document.markdown`, `frontend/documentation/plan.markdown`, and `frontend/documentation/document.markdown` — revised their respective status, technical flow, and change history.
+
+**Verification:** Frontend bundle was not verified in this shell: Vite transformed 21 modules but Windows denied writing the generated output, and the standard command also received `EPERM` under `node_modules/.vite-temp`. Maven and Java are unavailable, so backend compilation, migrations, startup, and browser auth remain unverified.
+
+### 2026-10-18 — Verify frontend bundle with a permitted output directory
+
+**Technical analysis:** Retried the production build using Vite's runner config loader and an output folder in the permitted temporary workspace. This verifies the current React application bundles, while the ordinary `dist/` output path remains blocked by workspace filesystem permissions. It does not verify API integration or backend authentication.
+
+**Files changed:**
+
+- `frontend/documentation/document.markdown` and `frontend/documentation/plan.markdown` — appended this verification result and updated current build status.
+- `README.md` — clarified frontend build and backend verification status.
+- `plan.markdown` — appended this verification record.
+
+**Verification:** `pnpm.cmd exec vite build --configLoader runner --outDir "C:\Users\Kaushik Sangmuli\.codex\visualizations\2026\10\17\01a14c32-da34-7df1-9c01-59ea069f3067\java-visualizer-frontend-build"` passed with Vite 8.3.4 (21 modules transformed). The temporary output directory was removed afterward. Backend Maven compilation and end-to-end authentication remain unverified.
+
+### 2026-10-18 — Diagnose local H2 startup error from user's log
+
+**Technical analysis:** The backend startup log showed H2 2.2.224 rejecting `MODE=MSSQL`. The H2 SQL Server compatibility mode is named `MSSQLServer`; updated the default local H2 connection URL. The SQL Server profile is unchanged.
+
+**Files changed:**
+
+- `backend/src/main/resources/application.properties` — correct H2 compatibility mode.
+- `backend/README.md` and `backend/documentation/document.markdown` — describe the local mode.
+- `backend/documentation/plan.markdown` and root `plan.markdown` — record the diagnosis and verification requirement.
+
+**Verification:** Confirmed the exact compatibility-mode name in the [H2 compatibility mode documentation](https://h2database.github.io/html/features.html). Application startup could not be rerun in this coding shell because Java and Maven are unavailable. Restart the app in Eclipse and check that Hikari connects and Flyway migrations complete.
+
+### 2026-10-18 — Remove obsolete session reset path and align CSRF header handling
+
+**Technical analysis:** Kept authentication consistently stateless. Password reset no longer queries Spring Session storage, which was not provisioned and would cause reset requests to fail; existing JWTs continue until their configured short expiry. Configured Spring Security to resolve the CSRF request token in the plain form returned by `/api/auth/csrf` and echoed by the React client.
+
+**Files and methods changed:**
+
+- `backend/src/main/java/com/example/demo/config/SecurityConfiguration.java` — `securityFilterChain` now uses `CsrfTokenRequestAttributeHandler` with the cookie token repository.
+- `backend/src/main/java/com/example/demo/service/auth/AuthService.java` — constructor and `resetPassword` no longer inject or query a Spring Session repository.
+- `backend/pom.xml` — removed unused `spring-session-jdbc` dependency.
+- `backend/src/main/resources/application.properties` — removed Spring Session JDBC settings.
+- Root/backend/frontend documentation — updated current authentication status and recorded this change.
+
+**Verification:** `git diff --check` reported no whitespace errors (only expected CRLF conversion notices). Java, `javac`, and Maven are not on PATH in this shell. Vite transformed the frontend modules but could not write build output due to Windows access denied; no backend or end-to-end auth result is claimed.
+
+### 2026-10-18 — Initial Phase Two database, authentication, deployment, and CI/CD plan
+
+**Technical analysis:** Established a relational account/data model, recommended Azure SQL Database to match the MSSQL preference, selected email OTP as the initial low-cost verification path, outlined Spring Security/session controls, proposed an Azure low-cost hosting topology, and added Docker, GitHub Actions, deployment, security, and readiness stages. The plan explicitly gates public arbitrary-code execution on stronger isolation.
+
+**Files changed:**
+
+- `plan.markdown` — new root-level phase-two project plan; no application code or infrastructure was changed.
+
+**Verification:** Inspected the monorepo root, backend Maven dependencies/configuration, and current Git ignore rules. Cloud quotas/pricing references are linked in the plan and should be reconfirmed before deployment.

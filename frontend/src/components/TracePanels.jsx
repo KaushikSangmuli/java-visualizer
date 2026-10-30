@@ -57,6 +57,17 @@ function VariableBox({ variable, heap, onReference, onFocus }) {
   return <div className={`variable-box ${shape} ${inlineEntity ? `inline-${entity.kind}` : ''}`} style={style} role="group" tabIndex={0} aria-label={`${variable.name}, ${displayType(variable.type)}${inlineEntity ? `, ${entity.kind} contents shown inline` : ''}. Press Enter to focus.`} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onFocus(); } }} onDoubleClick={onFocus} title="Double-click or press Enter to focus"><div className="variable-box-heading"><strong>{variable.name}</strong><small>{displayType(variable.type)}</small></div>{inlineEntity ? <InlineEntity value={variable} heap={heap} onReference={onReference} /> : <Value value={{ ...variable, type: displayType(variable.type) }} onReference={onReference} />}</div>;
 }
 
+function FunctionCalls({ calls = [] }) {
+  if (calls.length === 0) return null;
+  return <section className="function-calls" aria-label="Active function calls">
+    <h5>Function call</h5>
+    {calls.map((call, index) => <div className={`function-call-state ${call.state}`} key={`${call.line}-${index}`}>
+      <span className="function-call-status">{call.state === 'returned' ? 'Returned' : 'Waiting for return'}</span>
+      <code>{call.expression}</code>
+    </div>)}
+  </section>;
+}
+
 export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalysis = true }) {
   if (frames.length === 0) return <div className="empty-state">Run a program to inspect its call stack.</div>;
   return (
@@ -72,6 +83,7 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
           return <article className="frame-card normal-frame" key={`${frame.className}-${frame.method}-${index}`}>
             <div className="normal-frame-heading"><span>Name : {frame.method}</span><span>returns {displayType(frame.returnType)}</span></div>
             <div className="normal-variable-grid">{(frame.variables ?? []).map(renderNormalVariable)}</div>
+            <FunctionCalls calls={frame.calls} />
           </article>;
         }
         return <article className={`frame-card ${index === 0 ? 'frame-active' : ''}`} key={`${frame.className}-${frame.method}-${index}`}>
@@ -82,6 +94,7 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
           <div className="frame-meta"><span>{displayType(frame.className)} · line {frame.line}</span>{callSite != null && <span className="call-site">called from line {callSite}</span>}</div>
           {parameters.length > 0 && <section className="variable-group parameter-group"><h5>Parameters</h5><div className="variable-grid">{parameters.map((variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />)}</div></section>}
           {locals.length > 0 && <section className="variable-group local-group"><h5>Local variables</h5><div className="variable-grid">{locals.map((variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />)}</div></section>}
+          <FunctionCalls calls={frame.calls} />
           {parameters.length === 0 && locals.length === 0 && <div className="empty-variables">No visible variables at this line.</div>}
         </article>;
       })}

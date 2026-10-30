@@ -2,6 +2,7 @@ package com.example.demo.service;
 
 import com.example.demo.model.CodeMetadata;
 import com.example.demo.model.FrameSnapshot;
+import com.example.demo.model.FunctionCallSnapshot;
 import com.example.demo.model.HeapChange;
 import com.example.demo.model.HeapObjectSnapshot;
 import com.example.demo.model.HeapSnapshot;
@@ -23,10 +24,15 @@ import java.util.Objects;
 @Service
 public class TraceEnricher {
     public List<TraceStep> enrich(List<TraceStep> raw, CodeMetadata metadata) {
-        return enrich(raw, metadata, false);
+        return enrich(raw, metadata, false, "");
     }
 
     public List<TraceStep> enrich(List<TraceStep> raw, CodeMetadata metadata, boolean truncated) {
+        return enrich(raw, metadata, truncated, "");
+    }
+
+    public List<TraceStep> enrich(List<TraceStep> raw, CodeMetadata metadata, boolean truncated, String source) {
+        List<CallSiteAnalyzer.CallSite> callSites = CallSiteAnalyzer.analyze(source);
         List<TraceStep> result = new ArrayList<>(raw.size() + (raw.isEmpty() ? 0 : 1));
         Map<String, VariableSnapshot> previousVariables = Map.of();
         Map<String, HeapObjectSnapshot> previousObjects = Map.of();
@@ -35,7 +41,7 @@ public class TraceEnricher {
         int previousLoopLine = -1;
 
         for (int index = 0; index < raw.size(); index++) {
-            TraceStep step = raw.get(index);
+            TraceStep step = withFunctionCall(raw.get(index), callSites);
             String lineType = lineType(step.line(), step.event(), metadata);
             if (metadata.loops().stream().anyMatch(loop -> loop.startLine() == step.line())) {
                 if (previousLoopLine == step.line()) loopPasses++;
@@ -63,6 +69,62 @@ public class TraceEnricher {
                     endExplanation(last, truncated), null, last.heap(), "end", List.of(), List.of()));
         }
         return List.copyOf(result);
+    }
+
+    /** Adds one active or just-returned invocation to its caller frame; locals stay independent. */
+    private static TraceStep withFunctionCall(TraceStep step, List<CallSiteAnalyzer.CallSite> callSites) {
+        // Keep the pending call visible in the caller while the callee produces ordinary line steps.
+        if (step.frames().size() < 2) return step;
+        FrameSnapshot callee = step.frames().get(0);
+        FrameSnapshot caller = step.frames().get(1);
+        if ("main".equals(callee.method())) return step;
+
+        int argumentCount = (int) callee.variables().stream().filter(variable -> "parameter".equals(variable.kind())).count();
+        CallSiteAnalyzer.CallSite site = callSites.stream()
+                .filter(candidate -> candidate.callerMethod().equals(caller.method()))
+                .filter(candidate -> candidate.calledMethod().equals(callee.method()))
+                .filter(candidate -> caller.line() >= candidate.startLine() && caller.line() <= candidate.endLine())
+                .filter(candidate -> candidate.argumentCount() == argumentCount)
+                .findFirst().orElse(null);
+        if (site == null) return step;
+
+        String invocation = renderedInvocation(site, callee.variables());
+        boolean returned = "return".equals(step.event());
+        String returnValue = step.returnValue();
+        if (returned && returnValue == null && !"void".equals(callee.returnType())) returnValue = "null";
+        String prefix = site.target() == null ? "" : ("return".equals(site.target()) ? "return " : site.target() + " = ");
+        String expression = returned && returnValue != null
+                ? prefix + returnValue + " <= " + invocation
+                : prefix + invocation;
+        FunctionCallSnapshot call = new FunctionCallSnapshot(site.startLine(), expression,
+                returned ? "returned" : "evaluating", returned ? returnValue : null);
+
+        List<FrameSnapshot> frames = new ArrayList<>(step.frames());
+        frames.set(1, new FrameSnapshot(caller.method(), caller.className(), caller.returnType(),
+                caller.line(), caller.variables(), List.of(call)));
+        return new TraceStep(step.step(), step.line(), step.event(), step.stdout(), List.copyOf(frames),
+                step.explanation(), step.returnValue(), step.heap(), step.lineType(),
+                step.variableChanges(), step.heapChanges());
+    }
+
+    private static String renderedInvocation(CallSiteAnalyzer.CallSite site,
+                                             List<VariableSnapshot> variables) {
+        List<String> arguments = variables.stream()
+                .filter(variable -> "parameter".equals(variable.kind()))
+                .map(TraceEnricher::callArgumentValue).toList();
+        if (arguments.size() != site.argumentCount()) return site.sourceExpression();
+        int open = site.sourceExpression().indexOf('(');
+        if (open < 0) return site.sourceExpression();
+        return site.sourceExpression().substring(0, open + 1) + String.join(", ", arguments) + ")";
+    }
+
+    private static String callArgumentValue(VariableSnapshot variable) {
+        String value = variable.value() == null ? "null" : variable.value();
+        if (variable.type() != null && variable.type().equals("java.lang.String") && !"null".equals(value)) {
+            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
+                    .replace("\r", "\\r").replace("\n", "\\n") + "\"";
+        }
+        return value;
     }
 
     private static String endExplanation(TraceStep last, boolean truncated) {
