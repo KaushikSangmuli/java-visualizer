@@ -473,7 +473,8 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 
 - [ ] **B1. Free account** at brevo.com.
 - [ ] **B2. Verify the sender address** (Senders, domains & dedicated IPs → add sender → click the link in the email). Record it as `VISUALIZER_EMAIL_SENDER`.
-- [ ] **B3. API key** (SMTP & API → API keys → Generate). Store it in a password manager; it goes into the Container App secret `brevo-api-key`.
+- [ ] **B3. API key** (SMTP & API → API keys → Generate). Permissions: transactional emails **All**, everything else **None** (the backend only calls `POST /v3/smtp/email`). Copy it at once (`xkeysib-…`, shown only once); store it in a password manager; it goes into the Container App secret `brevo-api-key`.
+- [x] **B4. Authorized IPs blocking off for API keys** (Security → Authorized IPs; Container Apps has no fixed outbound IP). Confirmed deactivated 2026-11-01.
 
 ### Azure
 
