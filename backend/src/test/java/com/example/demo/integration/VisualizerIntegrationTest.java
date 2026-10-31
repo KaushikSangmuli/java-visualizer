@@ -124,7 +124,8 @@ class VisualizerIntegrationTest {
                         PriorityQueue<Integer> pq = new PriorityQueue<>(List.of(7, 3, 9));
                         Map<String, Integer> freq = new HashMap<>();
                         freq.put("x", 1);
-                        System.out.println(list.size() + stack.size() + queue.size() + chain.size() + pq.size() + freq.size());
+                        TreeSet<Integer> ids = new TreeSet<>(List.of(5, 1, 9));
+                        System.out.println(list.size() + stack.size() + queue.size() + chain.size() + pq.size() + freq.size() + ids.size());
                     }
                 }
                 """;
@@ -164,6 +165,14 @@ class VisualizerIntegrationTest {
         assertThat(freq.path("view").asText()).isEqualTo("map");
         assertThat(freq.path("entries").get(0).path("key").path("value").asText()).isEqualTo("x");
         assertThat(freq.path("entries").get(0).path("value").path("value").asText()).isEqualTo("1");
+
+        JsonNode ids = collections.get(idByName.get("ids"));
+        assertThat(ids.path("view").asText()).isEqualTo("set");
+        assertThat(ids.path("tree")).hasSize(3);
+        JsonNode root = ids.path("tree").get(0);                      // breadth-first: root first
+        assertThat(root.path("key").path("value").asText()).isEqualTo("5");
+        assertThat(root.path("red").asBoolean()).isFalse();
+        assertThat(root.path("leftId").asText()).isEqualTo(ids.path("tree").get(1).path("id").asText());
     }
 
     /** A signed-in caller with no stored account: visualization works, nothing is recorded. */

@@ -46,6 +46,7 @@ import com.example.demo.model.HeapObjectSnapshot;
 import com.example.demo.model.HeapSnapshot;
 import com.example.demo.model.MemoryValue;
 import com.example.demo.model.StaticFieldSnapshot;
+import com.example.demo.model.TreeNodeSnapshot;
 import com.example.demo.model.FrameSnapshot;
 import com.example.demo.model.TraceStep;
 import com.example.demo.model.VariableSnapshot;
@@ -649,10 +650,10 @@ public class Tracer {
                         case "java.util.ArrayDeque" -> arrayDeque(object, depth);
                         case "java.util.PriorityQueue" -> priorityQueue(object, depth);
                         case "java.util.HashSet", "java.util.LinkedHashSet" -> setOf(object, get(object, "map"), depth);
-                        case "java.util.TreeSet" -> setOf(object, get(object, "m"), depth);
+                        case "java.util.TreeSet" -> withTree(setOf(object, get(object, "m"), depth), get(object, "m"), false, depth);
                         default -> {
                             RawEntries map = mapEntries(object);
-                            if (map != null) yield mapOf(object, map, depth);
+                            if (map != null) yield withTree(mapOf(object, map, depth), object, true, depth);
                             yield wrapped(object, name, depth);
                         }
                     };
@@ -672,7 +673,7 @@ public class Tracer {
                         if (view == null) return null;
                         String note = name.contains("Unmodifiable") ? " (read-only)" : " (synchronized)";
                         return new CollectionSnapshot(view.view(), view.typeName() + note, view.size(), view.items(),
-                                view.entries(), view.nodes(), view.order(), view.complete());
+                                view.entries(), view.nodes(), view.order(), view.complete(), view.tree());
                     }
                 }
                 return null;
@@ -771,6 +772,26 @@ public class Tracer {
                 if (sortable) items.sort(NaturalOrder::compare);
                 return new CollectionSnapshot("priority-queue", displayName(object), size, List.copyOf(items), List.of(),
                         List.of(), sortable || items.size() <= 1 ? "priority" : "heap", complete);
+            }
+
+            /** TreeMap / TreeSet (backed by a TreeMap): adds the red-black tree's shape, root first. */
+            private CollectionSnapshot withTree(CollectionSnapshot snapshot, Value map, boolean withValues, int depth) {
+                if (snapshot == null || !(map instanceof ObjectReference tree)
+                        || !tree.referenceType().name().equals("java.util.TreeMap")) return snapshot;
+                List<TreeNodeSnapshot> nodes = new ArrayList<>();
+                java.util.Deque<ObjectReference> pendingNodes = new java.util.ArrayDeque<>();
+                if (get(tree, "root") instanceof ObjectReference root) pendingNodes.add(root);
+                while (!pendingNodes.isEmpty() && nodes.size() < maxArrayElements) {
+                    ObjectReference node = pendingNodes.remove();
+                    Value left = get(node, "left");
+                    Value right = get(node, "right");
+                    boolean black = get(node, "color") instanceof com.sun.jdi.BooleanValue color && color.value();
+                    nodes.add(new TreeNodeSnapshot(Long.toString(node.uniqueID()), element(get(node, "key"), depth),
+                            withValues ? element(get(node, "value"), depth) : null, idOf(left), idOf(right), !black));
+                    if (left instanceof ObjectReference child) pendingNodes.add(child);
+                    if (right instanceof ObjectReference child) pendingNodes.add(child);
+                }
+                return snapshot.withTree(nodes);
             }
 
             private CollectionSnapshot setOf(ObjectReference set, Value backingMap, int depth) {

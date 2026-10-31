@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import TreeDiagram from './TreeDiagram.jsx';
+import { collectionTreeNodes, isTreeNodeObject, namesByReference, treeRoots, userTreeNodes } from '../treeModel.js';
 import { innermostLoopAt, loopChain, loopKindLabel, loopVariableHistory } from '../loopHistory.js';
 
 const referenceColors = ['#4d88e8', '#16a085', '#d0783e', '#9866cf', '#d15478', '#1688a8', '#748d25', '#c15d45'];
@@ -108,14 +110,23 @@ export function CollectionView({ collection, onReference }) {
       {items.map((item, index) => <div className="list-cell" role="listitem" key={index}><small>[{index}]</small><CollectionItem value={item} onReference={onReference} /></div>)}
     </div>;
   }
+  const tree = (collection.tree ?? []).length > 0 ? collectionTreeNodes(collection) : null;
   return <div className={`collection-view view-${view}`}>
     <div className="collection-head"><b>{collection.typeName}</b><span>size {collection.size}</span>{!collection.complete && <span className="collection-note">showing first {shown}</span>}</div>
+    {tree && <TreeDiagram nodes={tree} rootId={collection.tree[0].id} />}
+    {tree && !empty && <small className="tree-inorder-label">in order</small>}
     {body}
   </div>;
 }
 
-function InlineEntity({ value, heap, onReference, visited = new Set(), depth = 0 }) {
+function InlineEntity({ value, heap, onReference, visited = new Set(), depth = 0, trees = null }) {
   const entity = value?.referenceId ? heap?.objects?.find((object) => object.id === value.referenceId) : null;
+  // A variable pointing at a tree root shows the whole tree; one pointing inside a tree shows that node.
+  if (entity && trees && isTreeNodeObject(entity)) {
+    if (trees.roots.has(entity.id)) return <TreeDiagram nodes={trees.nodes} rootId={entity.id} highlights={trees.highlights} />;
+    const node = trees.nodes.get(entity.id);
+    return <span className="tree-node-chip" title={`Tree node #${entity.id}`}><span className="tree-node tree-node-inline"><span className="tree-node-value">{node?.label}</span></span><small>#{entity.id}</small></span>;
+  }
   if (!entity || depth >= 5 || visited.has(entity.id)) {
     return <Value compact={depth > 0} value={{ ...value, type: displayType(value?.type) }} onReference={onReference} />;
   }
@@ -135,12 +146,13 @@ function InlineEntity({ value, heap, onReference, visited = new Set(), depth = 0
   </div>;
 }
 
-function VariableBox({ variable, heap, onReference, onFocus }) {
+function VariableBox({ variable, heap, onReference, onFocus, trees = null }) {
   const shape = valueShape(variable);
   const entity = variable.referenceId ? heap?.objects?.find((object) => object.id === variable.referenceId) : null;
   const style = variable.referenceId ? { '--reference-color': colorForId(variable.referenceId) } : undefined;
   const inlineEntity = entity && ['array', 'object', 'collection'].includes(entity.kind);
-  return <div className={`variable-box ${shape} ${inlineEntity ? `inline-${entity.kind}` : ''}`} style={style} role="group" tabIndex={0} aria-label={`${variable.name}, ${displayType(variable.type)}${inlineEntity ? `, ${entity.kind} contents shown inline` : ''}. Press Enter to focus.`} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onFocus(); } }} onDoubleClick={onFocus} title="Double-click or press Enter to focus"><div className="variable-box-heading"><strong>{variable.name}</strong><small>{displayType(variable.type)}</small></div>{inlineEntity ? <InlineEntity value={variable} heap={heap} onReference={onReference} /> : <Value value={{ ...variable, type: displayType(variable.type) }} onReference={onReference} />}</div>;
+  const treeEntity = inlineEntity && trees && isTreeNodeObject(entity);
+  return <div className={`variable-box ${shape} ${inlineEntity ? `inline-${entity.kind}` : ''}`} style={style} role="group" tabIndex={0} aria-label={`${variable.name}, ${displayType(variable.type)}${inlineEntity ? `, ${entity.kind} contents shown inline` : ''}. Press Enter to focus.`} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onFocus(); } }} onDoubleClick={onFocus} title="Double-click or press Enter to focus"><div className="variable-box-heading"><strong>{variable.name}</strong><small>{displayType(variable.type)}</small></div>{inlineEntity ? <InlineEntity value={variable} heap={heap} onReference={onReference} trees={trees} /> : <Value value={{ ...variable, type: displayType(variable.type) }} onReference={onReference} />}</div>;
 }
 
 // Calls this frame made on its current line, in execution order. Values are shown; hovering
@@ -190,6 +202,10 @@ function LoopBox({ loop, variables, callsByLoop, renderLoopVariable }) {
 export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalysis = true }) {
   // Collapsed frames are remembered by stack depth + method, so a frame stays closed while the user steps.
   const [collapsed, setCollapsed] = useState(() => new Set());
+  const trees = useMemo(() => {
+    const nodes = userTreeNodes(heap);
+    return nodes.size === 0 ? null : { nodes, roots: new Set(treeRoots(nodes)), highlights: namesByReference(frames) };
+  }, [heap, frames]);
   if (frames.length === 0) return <div className="empty-state">Run a program to inspect its call stack.</div>;
   const toggleFrame = (key) => setCollapsed((current) => {
     const next = new Set(current);
@@ -219,8 +235,8 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
         const isCollapsed = collapsed.has(frameKey);
         const collapseButton = <button type="button" className="frame-collapse" aria-expanded={!isCollapsed} aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${frame.method}`} title={isCollapsed ? 'Expand' : 'Collapse'} onClick={() => toggleFrame(frameKey)}>{isCollapsed ? '▸' : '▾'}</button>;
         const callSite = frames[index + 1]?.line;
-        const renderVariable = (variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} heap={fullAnalysis ? undefined : heap} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />;
-        const renderLoopVariable = (variable, loop) => <VariableBox key={`${variable.name}-loop`} variable={variable} heap={fullAnalysis ? undefined : heap} onReference={onReference} onFocus={() => onFocus({ kind: 'loop-variable', name: variable.name, variable, depth, startLine: loop.startLine, activationStep: loop.activationStep, loopKind: loop.kind })} />;
+        const renderVariable = (variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} heap={fullAnalysis ? undefined : heap} trees={fullAnalysis ? null : trees} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />;
+        const renderLoopVariable = (variable, loop) => <VariableBox key={`${variable.name}-loop`} variable={variable} heap={fullAnalysis ? undefined : heap} trees={fullAnalysis ? null : trees} onReference={onReference} onFocus={() => onFocus({ kind: 'loop-variable', name: variable.name, variable, depth, startLine: loop.startLine, activationStep: loop.activationStep, loopKind: loop.kind })} />;
         const loopBoxes = loops.map((loop) => <LoopBox key={`${loop.startLine}-${loop.activationStep}`} loop={loop} variables={variables} callsByLoop={callsByLoop} renderLoopVariable={renderLoopVariable} />);
         if (!fullAnalysis) {
           const normalGroup = (label, items) => items.length > 0 && <div className="normal-variable-group">
@@ -259,7 +275,7 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
   );
 }
 
-export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect, footer = null }) {
+export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect, footer = null, frames = [] }) {
   // Each object opens and closes on its own; following a reference also opens its target.
   const [openIds, setOpenIds] = useState(() => new Set());
   useEffect(() => {
@@ -271,7 +287,10 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect, fo
     if (open) next.add(id); else next.delete(id);
     return next;
   });
-  const objects = heap?.objects ?? [];
+  const treeNodes = useMemo(() => userTreeNodes(heap), [heap]);
+  const highlights = useMemo(() => namesByReference(frames), [frames]);
+  // Tree nodes are drawn once as a tree (below) instead of one card per node.
+  const objects = (heap?.objects ?? []).filter((object) => !treeNodes.has(object.id));
   const statics = heap?.staticFields ?? [];
   if (!heap) return <div className="empty-state">Heap snapshots appear after a trace is available.</div>;
   return (
@@ -292,6 +311,17 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect, fo
           ))}
         </section>
       )}
+      {treeNodes.size > 0 && <section className="heap-group">
+        <h4>Trees</h4>
+        {treeRoots(treeNodes).map((rootId) => {
+          const root = heap.objects.find((object) => object.id === rootId);
+          return <div className="tree-card" key={rootId}>
+            <TreeDiagram nodes={treeNodes} rootId={rootId} highlights={highlights}
+              caption={<><b>{displayType(root?.className)}</b><span>root #{rootId}</span></>}
+              onNodeFocus={(id) => { const node = heap.objects.find((object) => object.id === id); if (node) onFocus({ kind: 'object', object: node }); }} />
+          </div>;
+        })}
+      </section>}
       {objects.length > 0 ? (
         <section className="heap-group">
           <h4>Objects</h4>
@@ -330,7 +360,7 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect, fo
             ))}
           </div>
         </section>
-      ) : statics.length === 0 ? <div className="empty-state heap-empty">No reachable objects or user static fields at this step.</div> : null}
+      ) : statics.length === 0 && treeNodes.size === 0 ? <div className="empty-state heap-empty">No reachable objects or user static fields at this step.</div> : null}
       {footer}
     </div>
   );
@@ -360,6 +390,7 @@ export function FocusedPanel({ focus, heap, onReference, onClear, trace = [], st
           {focusedValue && <div className="focused-variable"><div><strong>{focus.name}</strong><small>{displayType(focus.type ?? focusedValue.type)}</small></div><Value value={{ ...focusedValue, type: displayType(focusedValue.type) }} onReference={onReference} /></div>}
           {focus.kind === 'object' && <div className="focused-object-title"><strong>{object.collection ? object.collection.typeName : displayType(object.className)}</strong><span>{object.collection ? object.collection.view.replace('-', ' ') : object.kind} · #{object.id}</span></div>}
           {object?.collection && <div className="focused-object-details"><CollectionView collection={object.collection} onReference={onReference} /></div>}
+          {object && isTreeNodeObject(object) && <div className="focused-object-details"><TreeDiagram nodes={userTreeNodes(heap)} rootId={object.id} caption={<span>subtree from #{object.id}</span>} /></div>}
           {object && !object.collection && <div className="focused-object-details">
             {object.kind === 'array' && <div className="object-meta">Length {object.length}</div>}
             {object.fields?.map((field) => <div className="focused-field" key={field.name}><span>{field.name}<small>{displayType(field.type)}</small></span><Value value={{ ...field.value, type: displayType(field.value?.type) }} onReference={onReference} /></div>)}

@@ -94,6 +94,46 @@ public class CollectionsDemo {
 }`,
   },
   {
+    name: 'Binary search tree + TreeMap / TreeSet',
+    className: 'BinaryTree',
+    code: `import java.util.*;
+
+public class BinaryTree {
+    static class TreeNode {
+        int val;
+        TreeNode left, right;
+        TreeNode(int val) { this.val = val; }
+    }
+
+    static TreeNode insert(TreeNode node, int val) {
+        if (node == null) return new TreeNode(val);
+        if (val < node.val) node.left = insert(node.left, val);
+        else node.right = insert(node.right, val);
+        return node;
+    }
+
+    static void inorder(TreeNode node, List<Integer> out) {
+        if (node == null) return;
+        inorder(node.left, out);
+        out.add(node.val);
+        inorder(node.right, out);
+    }
+
+    public static void main(String[] args) {
+        TreeNode root = null;
+        for (int value : new int[] {50, 30, 70, 20, 40, 60, 80}) {
+            root = insert(root, value);
+        }
+        List<Integer> sorted = new ArrayList<>();
+        inorder(root, sorted);
+        TreeMap<String, Integer> ages = new TreeMap<>();
+        ages.put("mia", 31); ages.put("al", 25); ages.put("zoe", 19); ages.put("bo", 40);
+        TreeSet<Integer> ids = new TreeSet<>(List.of(5, 1, 9, 3, 7));
+        System.out.println(sorted + " " + ages + " " + ids);
+    }
+}`,
+  },
+  {
     name: 'Heap & static fields',
     className: 'MemoryDemo',
     code: `import java.util.ArrayList;

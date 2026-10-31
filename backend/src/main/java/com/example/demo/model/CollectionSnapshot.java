@@ -17,12 +17,23 @@ import java.util.List;
  * @param order    extra ordering note: {@code priority} (sorted, next out first) or {@code heap} (heap array
  *                 order because a custom comparator cannot be applied without running user code); otherwise null
  * @param complete false when only the first elements were captured (configured element limit)
+ * @param tree     TreeMap/TreeSet only: the red-black tree's nodes, root first (breadth-first); empty otherwise
  */
 public record CollectionSnapshot(String view, String typeName, int size, List<MemoryValue> items,
                                  List<MapEntrySnapshot> entries, List<LinkedNodeSnapshot> nodes,
-                                 String order, boolean complete) {
+                                 String order, boolean complete, List<TreeNodeSnapshot> tree) {
+
+    public CollectionSnapshot(String view, String typeName, int size, List<MemoryValue> items,
+                              List<MapEntrySnapshot> entries, List<LinkedNodeSnapshot> nodes,
+                              String order, boolean complete) {
+        this(view, typeName, size, items, entries, nodes, order, complete, List.of());
+    }
 
     public CollectionSnapshot withView(String newView, List<MemoryValue> newItems) {
-        return new CollectionSnapshot(newView, typeName, size, newItems, entries, nodes, order, complete);
+        return new CollectionSnapshot(newView, typeName, size, newItems, entries, nodes, order, complete, tree);
+    }
+
+    public CollectionSnapshot withTree(List<TreeNodeSnapshot> treeNodes) {
+        return new CollectionSnapshot(view, typeName, size, items, entries, nodes, order, complete, List.copyOf(treeNodes));
     }
 }
