@@ -24,6 +24,11 @@ Free limits change; re-check each service's review page before clicking **Create
 
 > **Known limitation of this split setup.** The frontend and backend are on different sites, so the login cookie is a cross-site cookie (`SameSite=None; Secure`). Chrome, Edge and Firefox accept it; **Safari and all iPhone/iPad browsers block it by default**, so login fails there. The fix is a custom domain later (`www.example.com` → Static Web Apps, `api.example.com` → Container Apps), after which the cookie is same-site and works everywhere.
 
+## How things run automatically
+
+- **GitHub Actions.** GitHub runs every workflow file in `.github/workflows/` when one of the events listed under `on:` happens. `ci-cd.yml` lists: a pull request is opened or updated (tests + builds only, result shown as ✓/✗ on the PR), a push to `main` such as merging a PR (tests, builds, then deploy), and **Run workflow** clicked in the Actions tab. Pushing to a feature branch alone runs nothing. Deploy jobs skip themselves until the Azure variables exist. To deploy only after your approval, add yourself as a required reviewer on the GitHub environment `production`.
+- **Database migrations (Flyway).** Every time the backend starts, Flyway compares the scripts in `backend/src/main/resources/db/migration/<h2|sqlserver>/` with its record table `flyway_schema_history` and runs only the new ones, in version order. Starting the app in Eclipse, running `mvn clean verify` (in-memory test database) or the container starting on Azure all bring the database up to date; no SQL is run by hand. Scripts that already ran are never edited (Flyway stores a checksum and refuses to start if one changes); changes are new versions, e.g. V4 drops the `SPRING_SESSION` tables left over from an early server-side login design that JWT login replaced.
+
 ---
 
 ## Step 0 — Merge the code and publish the first image

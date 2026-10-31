@@ -4,16 +4,16 @@
 
 **Status:** Phase-two implementation is underway (see the status table below; visualization features added 2026-10-31 are on `feature/function-box-implementation`). Email/password authentication now uses stateless JWT cookies, login-first UI, and a local-only OTP bypass. The frontend production build passed to a permitted temporary directory; backend/database/browser verification remains pending because JDK and Maven are unavailable in the coding shell. Cloud accounts/resources and provider credentials remain user-configured.
 
-**Overall project status (2026-10-31):**
+**Overall project status (2026-10-31):** the last change set verified on the developer machine is commit `5590aa3` (run history). The deployment-readiness commit `1c08d1d` (sandbox, CSRF cookie, V4, CI/CD) has not been built by Maven yet; its first build is the pull-request CI run.
 
 | Area | Status | Pending |
 |---|---|---|
 | Visualizer core (compile, JDI trace, stack, heap, statics, metadata, state changes) | Done; user-verified with samples | Full sample matrix in browser |
-| Function-call boxes (waiting/returned rows in caller frames) | Done on `feature/function-box-implementation` | `mvn clean verify`, browser check, merge |
-| Loop boxes (iteration, condition corner, nested loops, per-iteration history) | Done on `feature/function-box-implementation` | `mvn clean verify`, browser check, merge |
-| Stack-first trace layout, compact variable boxes, collapsible frames, fixed step controls, heap objects open independently | Done on `feature/function-box-implementation` | `pnpm run build`, browser check |
-| Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Code present | Build, migrations, browser auth flow, Brevo in staging |
-| Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done on `feature/function-box-implementation` | `mvn clean verify`, SQL Server migration check, optional UI |
+| Function-call boxes (waiting/returned rows in caller frames) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31; owner checked the UI in the browser | Merge to `main` |
+| Loop boxes (iteration, condition corner, nested loops, per-iteration history) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31; owner checked the UI in the browser | Merge to `main` |
+| Stack-first trace layout, compact variable boxes, collapsible frames, fixed step controls, heap objects open independently | Done; owner checked the UI in the browser and declared the frontend complete (2026-10-31) | First CI frontend build |
+| Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Working locally with H2 and OTP `1234` (owner, 2026-10-31); build and H2 migrations verified by `mvn clean verify` | Azure SQL migration, Brevo email and cross-site cookies on first deploy |
+| Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31 (H2 migration + integration test) | Azure SQL migration on first deploy; optional UI |
 | Stage 3 Docker image | Dockerfile ready (dependency cache, non-root, JDK 21, writable H2 folder); local `docker run` documented | First build in GitHub Actions; sample traces inside the container |
 | Stage 4 GitHub Actions CI | `.github/workflows/ci-cd.yml`: backend `mvn verify`, frontend build, Docker build + image check | First green run on a pull request |
 | Stage 5–6 Azure deployment (SWA Free, Container Apps, Azure SQL free, Brevo, GHCR, OIDC) | Workflow deploy jobs and step-by-step guide `docs/DEPLOYMENT.md` ready; skipped until Azure variables exist | Create Azure resources, set GitHub variables/secrets, first deploy and smoke test |

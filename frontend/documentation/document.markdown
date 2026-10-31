@@ -282,3 +282,11 @@ The frontend is wired to the backend JWT flow but has not been verified end-to-e
 **Files and components changed:** `public/staticwebapp.config.json` (new); `../.github/workflows/ci-cd.yml` (frontend job and Static Web Apps deploy); `../docs/DEPLOYMENT.md`.
 
 **Verification:** JSON validated locally; the CI build and the Static Web Apps upload have not run yet (first run happens on the pull request / push to `main`).
+
+### 2026-10-31 — Verification status refresh
+
+**Technical analysis:** The project owner checked the current UI (function-call boxes, loop boxes, layout, collapsible frames, compact variables, heap fixes) in the browser and declared the frontend complete. Statuses in the frontend plan, root plan and README were updated from "pending" to verified. The first `pnpm run build` on a clean machine will run in the CI workflow.
+
+**Files changed:** `documentation/plan.markdown`, this document, root `plan.markdown`, `README.md`.
+
+**Verification:** Documentation-only change; verification facts come from the owner's report.

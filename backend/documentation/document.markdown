@@ -115,7 +115,7 @@ Java package names map to real nested directories such as `backend/src/main/java
 - JDK 21 is the intended runtime/compiler installation; Java source and target bytecode are configured for Java 17.
 - `maven.compiler.release` remains intentionally empty; `maven.compiler.source` and `maven.compiler.target` are `17`, preserving access to JDI APIs from the full JDK during compilation.
 - Compilation uses `javax.tools.JavaCompiler` with `-g`, `-encoding UTF-8`, `-proc:none`, `--release 17`, and `-d <classesDir>`.
-- JDI is provided by the JDK's `jdk.jdi` module. The debuggee runs separately with `-Xmx128m`, `-Xss1m`, UTF-8 encoding properties, and a classpath pointing at compiled temporary classes.
+- JDI is provided by the JDK's `jdk.jdi` module. The debuggee runs separately with `-Xmx128m`, `-Xss1m`, UTF-8 encoding properties, and a classpath pointing at compiled temporary classes. Since 2026-10-31 it also runs with `-Djava.security.manager=default -Djava.security.policy==<run folder>/sandbox.policy`, a per-run policy allowing only reads of its own classes and a few safe system properties (JDK 21 required; the Security Manager was removed in JDK 24).
 - Run Maven commands from `backend/`: `mvn -q clean compile` and `mvn spring-boot:run`.
 - The frontend uses React 19 and Vite 8. Run `npm install` and `npm run dev` from `frontend/`; Node.js 20.19+ is required by the selected Vite version. The Vite development proxy forwards `/api` and `/health` to port 8080.
 
@@ -435,3 +435,11 @@ The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it h
 - `Dockerfile`, `.dockerignore`, `README.md` — image and run instructions; `src/test/java/com/example/demo/service/CodeInspectorTest.java` — `blocksEnvironmentAccessAndMethodReferences`.
 
 **Verification:** The modified tracer was compiled with JDK 21 and run outside Spring: a hostile program's `getenv`, file read, `user.home`, socket and `exec` attempts were all denied while ordinary code ran; FunMulti, recursion/constructor/loop programs and all five frontend examples produced the same output and step counts as before, including heap objects, statics and collections. `System.exit` is still permitted by the JDK for application code (it only ends the user's own JVM; direct calls are blocklisted). The inspector change was run against JavaParser 3.17. `ClientAddress` and the controllers were type-checked against stand-ins. Not verified here: `mvn clean verify` with the new test, the Docker build (first real build will run in GitHub Actions), and anything on Azure.
+
+### 2026-10-31 — Verification status refresh
+
+**Technical analysis:** The project owner ran `mvn clean verify` successfully (4 warnings, not yet reviewed) on commit `5590aa3`, which covers the function-call boxes, loop boxes, stable change keys, run history (H2 migration V3 and the authenticated integration test), and checked the UI in the browser after rebuilding the project in Eclipse. Statuses in this document's plan, the root plan and the README were updated from "pending" to verified accordingly. The deployment-readiness commit `1c08d1d` (sandbox, V4, CSRF cookie, CI/CD) is newer and has not been built by Maven yet.
+
+**Files changed:** `documentation/plan.markdown`, this document (runtime description now mentions the Security Manager options), root `plan.markdown`, `README.md`, `../docs/DEPLOYMENT.md` ("How things run automatically").
+
+**Verification:** Documentation-only change; verification facts come from the owner's report.

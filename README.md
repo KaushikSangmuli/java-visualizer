@@ -80,9 +80,9 @@ Full details: [backend/README.md](backend/README.md) and [backend/documentation/
 | Area | Status |
 |---|---|
 | Visualizer core (trace, stack, heap, statics, state changes) | Done |
-| Function-call boxes, loop boxes, stack-first layout, collapsible frames, compact variables | Done on `feature/function-box-implementation`; local build/browser check pending |
-| Accounts (signup, OTP, JWT login, reset) | Implemented; end-to-end verification pending |
-| Run history in the database | Implemented on the feature branch; `mvn clean verify` pending |
+| Function-call boxes, loop boxes, stack-first layout, collapsible frames, compact variables | Done and verified locally (tests pass, UI checked) |
+| Accounts (signup, OTP, JWT login, reset) | Working locally (H2, OTP `1234`); Azure SQL + email pending first deploy |
+| Run history in the database | Done and verified locally (`mvn clean verify`) |
 | Docker image, GitHub Actions CI/CD, Azure deployment config | Ready; Azure resources not created yet ([deployment guide](docs/DEPLOYMENT.md)) |
 | DSA sheet / LeetCode problem picker | Future idea |
 
