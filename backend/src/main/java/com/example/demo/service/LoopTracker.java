@@ -182,6 +182,7 @@ final class LoopTracker {
         HeapObjectSnapshot object = heapObject(visible.get(name.getNameAsString()), heap);
         if (object == null) return null;
         if ("array".equals(object.kind())) return object.length();
+        if (object.collection() != null) return object.collection().size();
         if (object.fields() == null) return null;
         return object.fields().stream().filter(field -> "size".equals(field.name()) && field.value() != null)
                 .map(field -> parseInt(field.value().value())).filter(size -> size != null).findFirst().orElse(null);

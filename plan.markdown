@@ -15,6 +15,7 @@
 | Loop boxes (iteration, condition corner, nested loops, per-iteration history) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31; owner checked the UI in the browser | Merge to `main` |
 | Stack-first trace layout, compact variable boxes, collapsible frames, floating draggable step controls, heap objects open independently | Done; owner checked the UI in the browser and declared the frontend complete (2026-10-31) | First CI frontend build |
 | Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Working locally with H2 and OTP `1234` (owner, 2026-10-31); build and H2 migrations verified by `mvn clean verify` | Azure SQL migration, Brevo email and cross-site cookies on first deploy |
+| Java collection views (list, linked list with node addresses, stack, queue, priority queue, set, map; size; stack/queue from code usage) | Done on `feature/function-box-implementation` (2026-11-01) | `mvn clean verify`, owner browser check |
 | Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31 (H2 migration + integration test) | Azure SQL migration on first deploy; optional UI |
 | Stage 3 Docker image | Dockerfile ready (dependency cache, non-root, JDK 21, writable H2 folder); local `docker run` documented | First build in GitHub Actions; sample traces inside the container |
 | Stage 4 GitHub Actions CI | `.github/workflows/ci-cd.yml`: backend `mvn verify`, frontend build, Docker build + image check | First green run on a pull request |
@@ -261,6 +262,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
 
 ## 10. Change History
+
+### 2026-11-01 — DSA views for Java collections
+
+**Technical analysis:** Collections now show only their elements, size and DSA shape instead of JDK internals, in both modes: lists as indexed cells, `LinkedList` as node boxes `prev │ value │ next` with addresses and arrows, stacks vertical (top first), queues horizontal (front/back), priority queues in next-out order, sets as `{ }`, maps as `key │ value`. Boxed numbers are plain values. `ArrayDeque`/`LinkedList` are drawn as a stack or queue according to how the code uses them. Added a Collections example.
+
+**Files changed:** backend `Tracer.java`, new collection models, `CollectionUsageAnalyzer.java`, `CollectionViewResolver.java`, `TraceEnricher.java`, `LoopTracker.java`, tests; frontend `TracePanels.jsx`, `styles.css`, `examples.js`; documentation, plans, `README.md`, `docs/HANDOVER.md`.
+
+**Verification:** Real tracer runs and headless-browser screenshots; unit tests under the stand-in runner. `mvn clean verify` and owner browser check pending.
 
 ### 2026-11-01 — 12-hour cap on sliding sessions
 

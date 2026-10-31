@@ -48,6 +48,52 @@ export const examples = [
 }`,
   },
   {
+    name: 'Collections: list, stack, queue, map, set',
+    className: 'CollectionsDemo',
+    code: `import java.util.*;
+
+public class CollectionsDemo {
+    public static void main(String[] args) {
+        List<Integer> list = new ArrayList<>();
+        list.add(5);
+        list.add(8);
+        list.add(2);
+
+        LinkedList<String> chain = new LinkedList<>();
+        chain.add("ann");
+        chain.add("bob");
+        chain.addFirst("zed");
+
+        Deque<Integer> stack = new ArrayDeque<>();
+        stack.push(1);
+        stack.push(2);
+        stack.pop();
+        stack.push(3);
+
+        Queue<Integer> queue = new LinkedList<>();
+        queue.offer(10);
+        queue.offer(20);
+        queue.poll();
+        queue.offer(30);
+
+        PriorityQueue<Integer> pq = new PriorityQueue<>();
+        pq.add(7);
+        pq.add(3);
+        pq.add(9);
+
+        Set<String> seen = new HashSet<>();
+        seen.add("x");
+        seen.add("y");
+
+        Map<String, Integer> freq = new HashMap<>();
+        for (String word : new String[] {"a", "b", "a"}) {
+            freq.put(word, freq.getOrDefault(word, 0) + 1);
+        }
+        System.out.println(list + " " + chain + " " + stack + " " + queue + " " + pq.peek() + " " + seen + " " + freq);
+    }
+}`,
+  },
+  {
     name: 'Heap & static fields',
     className: 'MemoryDemo',
     code: `import java.util.ArrayList;

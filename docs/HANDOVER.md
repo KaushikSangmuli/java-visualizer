@@ -51,7 +51,8 @@ GitHub: `KaushikSangmuli/java-visualizer` (public for now; the owner may make it
 | `e5e023b`, `40206a2`, `79ae3b5` | Status refresh (owner verified `mvn clean verify` and the UI), handover and deployment runbook. |
 | `8149050` | Floating, draggable step controls that stay where dropped (remembered per browser). |
 | `faf2801` | Fix false logouts: `/error` permitted, JSON 403 for CSRF, sliding JWT session, frontend CSRF retry. |
-| (next commit, 2026-11-01) | Security review of that fix (no bypass); sliding session capped at 12 hours after login; `JwtTokenServiceTest`. |
+| `9d57737` | Security review of that fix (no bypass); sliding session capped at 12 hours after login; `JwtTokenServiceTest`. |
+| (next commit, 2026-11-01) | DSA views for Java collections (list, linked list nodes with addresses, stack, queue, priority queue, set, map; size); stack/queue from code usage; Collections example. |
 
 ## 4. Key decisions and why
 
@@ -88,6 +89,7 @@ Open `http://localhost:5173`, sign up, use OTP `1234`. Tests: `mvn clean verify`
 
 - **Verified on the owner's machine:** `mvn clean verify` passes (4 warnings, not yet reviewed) up to commit `5590aa3`; the UI works end to end locally; frontend declared complete.
 - **Not yet built by Maven:** commit `1c08d1d` and later (sandbox, V4, CSRF, CI/CD). First build = CI on the pull request.
+- **Collection views (2026-11-01):** verified with the real tracer and in headless Chromium; `mvn clean verify` and owner browser check pending.
 - **Not yet checked in the owner's browser:** floating step controls (tested in headless Chromium); login-session fix from 2026-11-01 (owner hit a false "Authentication required" after running custom code).
 - **Open pre-deployment items (proposed, awaiting owner's go-ahead):** Azure SQL date/time mapping fix (`hibernate.type.preferred_instant_jdbc_type=TIMESTAMP` for SQL Server profiles, `-Duser.timezone=UTC` in the image); optional signup allowlist for the private beta.
 - **Not started:** Azure resources (see the runbook in `plan.markdown` section 11).
@@ -106,6 +108,7 @@ Open `http://localhost:5173`, sign up, use OTP `1234`. Tests: `mvn clean verify`
 - User programs are sandboxed for secrets/files/network/processes, but CPU/memory are shared within one replica; treat the deployment as a private beta.
 - A loop body written on the header line counts iterations approximately; conditions that call methods (`list.size()`) show variables substituted only.
 - Frames deeper than 50 (very deep recursion) may lose call/loop rows.
+- Priority queues with a custom comparator show heap-array order (first element is still next out); `EnumSet`/`EnumMap`, `IdentityHashMap`, `WeakHashMap`, skip-list and blocking collections still show raw fields; user-written `Node`/`TreeNode` classes are not yet drawn as node boxes or trees (natural next step).
 - `System.exit` inside user code is allowed by the JDK (it only ends the user's own JVM; direct calls are blocklisted).
 
 ## 9. Resuming with a new AI session

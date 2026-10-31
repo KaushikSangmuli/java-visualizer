@@ -442,3 +442,37 @@ h1 span { color: var(--blue); }
   .account-button { max-width: 120px; padding: 7px 8px; font-size: 9px; }
   .auth-card { padding: 27px 21px; }
 }
+
+/* Collections (CollectionView): only elements, size and DSA shape. */
+.collection-view { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; }
+.collection-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; font: 9px var(--mono); color: #5d6e7e; }
+.collection-head b { color: #26384b; font-weight: 700; }
+.collection-note { color: #9a6b1f; font: 8px var(--mono); }
+.collection-empty { color: #8b98a7; font: italic 9px var(--mono); }
+.collection-list, .collection-queue { display: flex; flex-wrap: wrap; gap: 0; }
+.list-cell, .queue-cell { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 30px; padding: 2px 5px 3px; border: 1px solid #6e7986; margin-left: -1px; background: #fff; font: 600 10px var(--mono); }
+.list-cell small { color: #8b98a7; font: 7px var(--mono); }
+.list-cell .value-display .value-shape, .queue-cell .value-display .value-shape, .stack-cell .value-display .value-shape, .set-item .value-display .value-shape, .map-entry .value-display .value-shape, .linked-cell .value-display .value-shape { min-width: 0; min-height: 0; padding: 0; border: 0; background: transparent; font: 700 10px var(--mono); }
+.cell-tag { color: #2f6fd6; font: 700 7px 'Segoe UI', sans-serif; text-transform: uppercase; letter-spacing: .3px; }
+.queue-cell { border-color: #4d7fc4; }
+.view-priority-queue .queue-cell:first-child { background: #eef4fd; }
+.collection-stack { display: inline-flex; flex-direction: column; align-items: stretch; min-width: 56px; align-self: flex-start; border: 1.5px solid #4a5a6a; border-top: 0; border-radius: 0 0 4px 4px; padding: 0 2px 2px; background: #f7f9fb; }
+.stack-cell { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 20px; margin-top: 2px; padding: 1px 6px; border: 1px solid #6e7986; background: #fff; font: 600 10px var(--mono); }
+.stack-cell:first-child { border-color: #2f6fd6; background: #eef4fd; }
+.collection-set { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; color: #7b8a9a; font: 700 12px var(--mono); }
+.set-item { padding: 1px 6px; border: 1px solid #8e6976; border-radius: 9px; background: #fff; font: 600 10px var(--mono); color: #26384b; }
+.collection-map { display: flex; flex-direction: column; gap: 2px; }
+.map-entry { display: inline-grid; grid-template-columns: minmax(28px, max-content) minmax(28px, max-content); align-self: flex-start; border: 1px solid #6e7986; background: #fff; font: 600 10px var(--mono); }
+.map-key, .map-value { display: flex; align-items: center; justify-content: center; padding: 2px 6px; }
+.map-key { border-right: 1px solid #6e7986; background: #f3f6fa; }
+.linked-nodes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 0; }
+.linked-node-wrap { display: flex; align-items: flex-end; }
+.linked-arrow { padding: 0 3px 4px; color: #4d7fc4; font: 700 13px/1 'Segoe UI', sans-serif; }
+.linked-node { display: flex; flex-direction: column; align-items: stretch; gap: 1px; }
+.linked-node-labels { display: flex; justify-content: center; gap: 4px; color: #8b98a7; font: 7px var(--mono); }
+.linked-node-labels b { color: #2f6fd6; font: 700 7px 'Segoe UI', sans-serif; text-transform: uppercase; }
+.linked-node-cells { display: flex; border: 1.5px solid #4d7fc4; border-radius: 3px; background: #fff; }
+.linked-cell { display: flex; align-items: center; justify-content: center; min-width: 26px; padding: 2px 4px; font: 600 10px var(--mono); }
+.linked-cell.pointer { color: #6c7d8f; font-size: 8px; background: #f3f6fa; }
+.linked-cell.value { border-left: 1px solid #b9cdea; border-right: 1px solid #b9cdea; }
+.normal-frame .variable-box.inline-collection { width: auto; min-width: 60px; max-width: min(100%, 520px); }

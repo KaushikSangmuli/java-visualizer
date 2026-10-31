@@ -109,6 +109,63 @@ class VisualizerIntegrationTest {
                 .andExpect(jsonPath("$.totalRuns").value(0));
     }
 
+    @Test
+    void collectionsShowOnlyTheirElementsSizeAndDsaShape() throws Exception {
+        String code = """
+                import java.util.*;
+                public class Main {
+                    public static void main(String[] args) {
+                        List<Integer> list = new ArrayList<>(List.of(5, 8, 2));
+                        Deque<Integer> stack = new ArrayDeque<>();
+                        stack.push(1); stack.push(2);
+                        Queue<Integer> queue = new LinkedList<>();
+                        queue.offer(10); queue.offer(20);
+                        LinkedList<String> chain = new LinkedList<>(List.of("a", "b"));
+                        PriorityQueue<Integer> pq = new PriorityQueue<>(List.of(7, 3, 9));
+                        Map<String, Integer> freq = new HashMap<>();
+                        freq.put("x", 1);
+                        System.out.println(list.size() + stack.size() + queue.size() + chain.size() + pq.size() + freq.size());
+                    }
+                }
+                """;
+        String response = mvc.perform(post("/api/visualize").with(signedIn("collections@example.com")).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("code", code))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ok"))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode trace = objectMapper.readTree(response).path("trace");
+        JsonNode last = trace.get(trace.size() - 1);
+        java.util.Map<String, String> idByName = new java.util.HashMap<>();
+        last.path("frames").get(0).path("variables").forEach(variable -> idByName.put(variable.path("name").asText(), variable.path("referenceId").asText()));
+        java.util.Map<String, JsonNode> collections = new java.util.HashMap<>();
+        last.path("heap").path("objects").forEach(object -> collections.put(object.path("id").asText(), object.path("collection")));
+
+        JsonNode list = collections.get(idByName.get("list"));
+        assertThat(list.path("view").asText()).isEqualTo("list");
+        assertThat(list.path("size").asInt()).isEqualTo(3);
+        assertThat(list.path("items").findValuesAsText("value")).containsExactly("5", "8", "2");
+
+        JsonNode stack = collections.get(idByName.get("stack"));
+        assertThat(stack.path("view").asText()).isEqualTo("stack");
+        assertThat(stack.path("items").findValuesAsText("value")).containsExactly("2", "1");   // top first
+
+        assertThat(collections.get(idByName.get("queue")).path("view").asText()).isEqualTo("queue");
+
+        JsonNode chain = collections.get(idByName.get("chain"));
+        assertThat(chain.path("view").asText()).isEqualTo("linked-list");
+        assertThat(chain.path("nodes").get(0).path("nextId").asText()).isEqualTo(chain.path("nodes").get(1).path("id").asText());
+
+        JsonNode pq = collections.get(idByName.get("pq"));
+        assertThat(pq.path("items").findValuesAsText("value")).containsExactly("3", "7", "9");
+        assertThat(pq.path("order").asText()).isEqualTo("priority");
+
+        JsonNode freq = collections.get(idByName.get("freq"));
+        assertThat(freq.path("view").asText()).isEqualTo("map");
+        assertThat(freq.path("entries").get(0).path("key").path("value").asText()).isEqualTo("x");
+        assertThat(freq.path("entries").get(0).path("value").path("value").asText()).isEqualTo("1");
+    }
+
     /** A signed-in caller with no stored account: visualization works, nothing is recorded. */
     private static RequestPostProcessor signedIn(String email) {
         return user(email);

@@ -37,12 +37,90 @@ function Value({ value, onReference, className = '', compact = false }) {
   return <span className={`value-display ${shape} ${className}`} title={`${value.type}: ${shownValue}`}>{contents}</span>;
 }
 
+// ---------------------------------------------------------------- collections
+// java.util collections arrive with a DSA view from the backend (`object.collection`): only the
+// elements, the size and the shape that matters while dry-running code.
+
+const shortId = (id) => (id ? `#${id}` : '∅');
+
+function CollectionItem({ value, onReference }) {
+  return <Value compact value={{ ...value, type: displayType(value?.type) }} onReference={onReference} />;
+}
+
+function LinkedNodes({ collection, onReference }) {
+  const nodes = collection.nodes ?? [];
+  if (nodes.length === 0) return <span className="collection-empty">empty</span>;
+  return <div className="linked-nodes" role="list">
+    {nodes.map((node, index) => <div className="linked-node-wrap" role="listitem" key={node.id}>
+      {index > 0 && <span className="linked-arrow" aria-hidden="true">⇄</span>}
+      <div className="linked-node">
+        <span className="linked-node-labels">{index === 0 && <b>first</b>}<small>{shortId(node.id)}</small>{index === nodes.length - 1 && <b>last</b>}</span>
+        <div className="linked-node-cells">
+          <span className="linked-cell pointer" title="prev node address">{shortId(node.prevId)}</span>
+          <span className="linked-cell value" title="value"><CollectionItem value={node.value} onReference={onReference} /></span>
+          <span className="linked-cell pointer" title="next node address">{shortId(node.nextId)}</span>
+        </div>
+      </div>
+    </div>)}
+  </div>;
+}
+
+export function CollectionView({ collection, onReference }) {
+  const items = collection.items ?? [];
+  const entries = collection.entries ?? [];
+  const view = collection.view;
+  const shown = view === 'map' ? entries.length : view === 'linked-list' ? (collection.nodes ?? []).length : items.length;
+  const empty = collection.size === 0;
+  let body;
+  if (empty) {
+    body = <span className="collection-empty">empty</span>;
+  } else if (view === 'linked-list') {
+    body = <LinkedNodes collection={collection} onReference={onReference} />;
+  } else if (view === 'map') {
+    body = <div className="collection-map" role="table">
+      {entries.map((entry, index) => <div className="map-entry" role="row" key={index}>
+        <span className="map-key" role="cell"><CollectionItem value={entry.key} onReference={onReference} /></span>
+        <span className="map-value" role="cell"><CollectionItem value={entry.value} onReference={onReference} /></span>
+      </div>)}
+    </div>;
+  } else if (view === 'set') {
+    body = <div className="collection-set">{'{'}{items.map((item, index) => <span className="set-item" key={index}><CollectionItem value={item} onReference={onReference} /></span>)}{'}'}</div>;
+  } else if (view === 'stack') {
+    body = <div className="collection-stack" role="list">
+      {items.map((item, index) => <div className="stack-cell" role="listitem" key={index}>
+        <CollectionItem value={item} onReference={onReference} />{index === 0 && <small className="cell-tag">top</small>}
+      </div>)}
+    </div>;
+  } else if (view === 'queue' || view === 'priority-queue') {
+    const firstLabel = view === 'queue' ? 'front' : 'next out';
+    body = <div className="collection-queue-wrap">
+      <div className="collection-queue" role="list">
+        {items.map((item, index) => <div className="queue-cell" role="listitem" key={index}>
+          <CollectionItem value={item} onReference={onReference} />
+          {index === 0 && <small className="cell-tag">{firstLabel}</small>}
+          {view === 'queue' && index === items.length - 1 && index > 0 && <small className="cell-tag">back</small>}
+        </div>)}
+      </div>
+      {view === 'priority-queue' && collection.order === 'heap' && <small className="collection-note">heap order (custom comparator) · first is next out</small>}
+    </div>;
+  } else {
+    body = <div className="collection-list" role="list">
+      {items.map((item, index) => <div className="list-cell" role="listitem" key={index}><small>[{index}]</small><CollectionItem value={item} onReference={onReference} /></div>)}
+    </div>;
+  }
+  return <div className={`collection-view view-${view}`}>
+    <div className="collection-head"><b>{collection.typeName}</b><span>size {collection.size}</span>{!collection.complete && <span className="collection-note">showing first {shown}</span>}</div>
+    {body}
+  </div>;
+}
+
 function InlineEntity({ value, heap, onReference, visited = new Set(), depth = 0 }) {
   const entity = value?.referenceId ? heap?.objects?.find((object) => object.id === value.referenceId) : null;
   if (!entity || depth >= 5 || visited.has(entity.id)) {
     return <Value compact={depth > 0} value={{ ...value, type: displayType(value?.type) }} onReference={onReference} />;
   }
 
+  if (entity.collection) return <CollectionView collection={entity.collection} onReference={onReference} />;
   const nextVisited = new Set(visited).add(entity.id);
   const children = entity.kind === 'array'
     ? (entity.elements ?? []).map((element, index) => ({ name: `[${index}]`, value: element }))
@@ -230,12 +308,13 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect, fo
                 title="Double-click to focus this heap object"
               >
                 <summary>
-                  <span className="object-kind">{object.kind}</span>
-                  <span className="object-title">{displayType(object.className)}</span>
+                  <span className="object-kind">{object.collection ? object.collection.view.replace('-', ' ') : object.kind}</span>
+                  <span className="object-title">{object.collection ? `${object.collection.typeName} · size ${object.collection.size}` : displayType(object.className)}</span>
                   <span className="object-id">#{object.id}</span>
                 </summary>
                 <button className="focus-object-button" type="button" onClick={(event) => { event.stopPropagation(); onFocus({ kind: 'object', object }); }}>Focus object</button>
                 <div className="object-details">
+                  {object.collection && <CollectionView collection={object.collection} onReference={onReference} />}
                   {object.kind === 'array' && <div className="object-meta">Length {object.length}{object.elements?.length < object.length ? ` · showing ${object.elements.length}` : ''}</div>}
                   {object.fields?.map((field, index) => (
                     <div className="object-row" key={`${field.name}-${index}`}>
@@ -245,7 +324,7 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect, fo
                   ))}
                   {object.elements?.length > 0 && <div className="array-elements">{object.elements.map((value, index) => <div className="array-element" key={`element-${index}`} title={`${displayType(value.type)}: ${value.referenceId ? displayType(value.value) : value.value}`}><span className="array-index">[{index}]</span><span className="array-element-value">{value.referenceId ? <Value compact value={value} onReference={onReference} /> : value.value ?? 'null'}</span></div>)}</div>}
                   {object.expanded === false && <div className="object-meta">Expansion stopped by a configured limit.</div>}
-                  {object.fields?.length === 0 && object.elements?.length === 0 && <div className="object-meta">No captured fields or elements.</div>}
+                  {!object.collection && object.fields?.length === 0 && object.elements?.length === 0 && <div className="object-meta">No captured fields or elements.</div>}
                 </div>
               </details>
             ))}
@@ -279,8 +358,9 @@ export function FocusedPanel({ focus, heap, onReference, onClear, trace = [], st
             </ol>}
           </div>}
           {focusedValue && <div className="focused-variable"><div><strong>{focus.name}</strong><small>{displayType(focus.type ?? focusedValue.type)}</small></div><Value value={{ ...focusedValue, type: displayType(focusedValue.type) }} onReference={onReference} /></div>}
-          {focus.kind === 'object' && <div className="focused-object-title"><strong>{displayType(object.className)}</strong><span>{object.kind} · #{object.id}</span></div>}
-          {object && <div className="focused-object-details">
+          {focus.kind === 'object' && <div className="focused-object-title"><strong>{object.collection ? object.collection.typeName : displayType(object.className)}</strong><span>{object.collection ? object.collection.view.replace('-', ' ') : object.kind} · #{object.id}</span></div>}
+          {object?.collection && <div className="focused-object-details"><CollectionView collection={object.collection} onReference={onReference} /></div>}
+          {object && !object.collection && <div className="focused-object-details">
             {object.kind === 'array' && <div className="object-meta">Length {object.length}</div>}
             {object.fields?.map((field) => <div className="focused-field" key={field.name}><span>{field.name}<small>{displayType(field.type)}</small></span><Value value={{ ...field.value, type: displayType(field.value?.type) }} onReference={onReference} /></div>)}
             {object.elements?.map((value, index) => <div className="focused-field" key={`element-${index}`}><span>[{index}]</span><Value compact value={value} onReference={onReference} /></div>)}
