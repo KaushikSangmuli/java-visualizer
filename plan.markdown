@@ -453,7 +453,7 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 | Resource group / region | A1 | `rg-java-visualizer` / ... |
 | SQL server / database | A2 | `....database.windows.net` / `javavisualizer` |
 | `DB_URL` | A2 | `jdbc:sqlserver://<server>.database.windows.net:1433;database=javavisualizer;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;` |
-| Brevo sender | B2 | ... |
+| Brevo sender | B2 | `sangmulekaoushik@gmail.com` (`VISUALIZER_EMAIL_SENDER`) |
 | `FRONTEND_URL` | A4 | `https://....azurestaticapps.net` |
 | Container App name / `BACKEND_URL` | A5 | ... / `https://....azurecontainerapps.io` |
 | Managed identity client ID | A6 | ... |
@@ -471,9 +471,9 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 
 ### Brevo (OTP email)
 
-- [ ] **B1. Free account** at brevo.com.
-- [ ] **B2. Verify the sender address** (Senders, domains & dedicated IPs → add sender → click the link in the email). Record it as `VISUALIZER_EMAIL_SENDER`.
-- [ ] **B3. API key** (SMTP & API → API keys → Generate). Permissions: transactional emails **All**, everything else **None** (the backend only calls `POST /v3/smtp/email`). Copy it at once (`xkeysib-…`, shown only once); store it in a password manager; it goes into the Container App secret `brevo-api-key`.
+- [x] **B1. Free account** at brevo.com (2026-11-01).
+- [x] **B2. Verify the sender address** (verified 2026-11-01: `sangmulekaoushik@gmail.com`, name `java-visualiser`; shared IP, default DKIM, freemail DMARC warning — codes may land in Spam until a custom domain is authenticated in Brevo) (Senders, domains & dedicated IPs → add sender → click the link in the email). Record it as `VISUALIZER_EMAIL_SENDER`.
+- [x] **B3. API key** (created and stored by the owner, 2026-11-01) (SMTP & API → API keys → Generate). Permissions: transactional emails **All**, everything else **None** (the backend only calls `POST /v3/smtp/email`). Copy it at once (`xkeysib-…`, shown only once); store it in a password manager; it goes into the Container App secret `brevo-api-key`.
 - [x] **B4. Authorized IPs blocking off for API keys** (Security → Authorized IPs; Container Apps has no fixed outbound IP). Confirmed deactivated 2026-11-01.
 
 ### Azure
