@@ -4,6 +4,7 @@ The backend accepts Java source and returns bounded execution traces through the
 
 ## Current status
 
+- **Run history (2026-10-31): Implemented; `mvn clean verify` pending.** `visualization_run` table (V3, H2 + SQL Server) records every visualization by a signed-in user with outcome, status and failure reason; `GET /api/runs` returns the caller's totals and recent runs. Source code is not stored.
 - **Phase 2 Stage 1 (database foundation): Initial migrations and profiles added; local/cloud database verification pending.** Local default uses file-backed H2; `local-sqlserver` and `azure` target SQL Server. Account/OTP tables are used by the app; authentication does not use server-side session tables.
 - **Phase 2 Stage 2 (authentication): JWT/local OTP implementation added; build and runtime verification pending.** The frontend login page gates the visualizer, signup and reset use email OTP outside the local profile, and the backend issues short-lived JWTs in HttpOnly cookies with CSRF protection. Local profile accepts fixed OTP `1234`; Azure profile requires a signing secret and real email settings. SQL Server/H2, frontend-browser, and JWT flows still need local verification.
 - **Local H2 startup issue:** Corrected the configured H2 mode from unsupported `MSSQL` to `MSSQLServer` after the user's Spring Boot log showed H2 2.2.224 rejecting the old mode name. Restart from Eclipse to verify database migration startup.

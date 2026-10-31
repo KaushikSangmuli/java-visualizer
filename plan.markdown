@@ -13,6 +13,7 @@
 | Loop boxes (iteration, condition corner, nested loops, per-iteration history) | Done on `feature/function-box-implementation` | `mvn clean verify`, browser check, merge |
 | Stack-first trace layout, compact variable boxes, collapsible frames, fixed step controls, heap objects open independently | Done on `feature/function-box-implementation` | `pnpm run build`, browser check |
 | Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Code present | Build, migrations, browser auth flow, Brevo in staging |
+| Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done on `feature/function-box-implementation` | `mvn clean verify`, SQL Server migration check, optional UI |
 | Stage 3 Docker / local compose | Dockerfile only | Compose, image checks, sample traces in container |
 | Stage 4–6 GitHub Actions CI/CD and Azure | Not started | All |
 | Stage 7 production readiness / sandbox gate | Not started | All |
@@ -87,6 +88,7 @@ Use UUID/uniqueidentifier primary keys, UTC timestamps, foreign keys, unique con
 | `user_identity` | Extensible login identities: user id, provider (`local_email`, later `google`, later `phone`), provider subject/normalized identifier, verified timestamp. Unique provider + subject. Do not assume Gmail OAuth and email OTP are the same identity mechanism. |
 | `verification_challenge` | Signup verification and password-reset challenges: user/destination, purpose, code hash, created/expiry/consumed times, failed attempts, resend count/next-allowed time. Store a hash, never the delivered OTP. |
 | Server-side session tables | Not used. Authentication is stateless JWT; password-reset does not immediately revoke already issued JWTs, which remain valid until their 30-minute expiry. |
+| `visualization_run` | **Implemented (V3).** One row per visualization by a signed-in user: time, outcome SUCCESS/FAILED, status, message, failure reason, step count, truncated, code length, duration. No source code. Cascade-deleted with the user. |
 | `saved_project` | User-owned project label, created/updated time, optional archive/delete time. |
 | `saved_source` | User-owned source file/project id, safe filename, Java source, language/version metadata, created/updated time. Save only on explicit action. |
 | `saved_visualization` | Optional explicitly saved run: source id or source snapshot, backend/trace schema version, status, timestamp, and bounded trace JSON or compressed payload. Establish quotas/retention and size limits before enabling. |
@@ -252,6 +254,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
 
 ## 10. Change History
+
+### 2026-10-31 — Run history stored per user
+
+**Technical analysis:** Added the `visualization_run` table (Flyway V3 for H2 and SQL Server), entity, repository and `RunHistoryService`. Every **Run & visualize** by a signed-in user is stored with outcome (SUCCESS/FAILED), status, message and failure reason; `GET /api/runs` returns the caller's totals and 20 newest runs. Source code is not stored. Fixed the integration test, which still called `/api/visualize` anonymously after authentication was added.
+
+**Files changed:** backend migrations V3, `model/run/VisualizationRun.java`, `repository/run/VisualizationRunRepository.java`, `service/run/RunOutcome.java`, `service/run/RunHistoryService.java`, `controller/RunHistoryController.java`, `controller/VisualizeController.java`, `pom.xml`, tests; backend documentation, this file, `README.md`.
+
+**Verification:** Outcome logic and tests run with JDK 21; Spring classes type-checked against stand-ins only. `mvn clean verify` and SQL Server migration pending.
 
 ### 2026-10-31 — Compact variables, collapsible frames, independent heap objects, fixed controls
 

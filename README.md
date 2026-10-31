@@ -16,6 +16,7 @@ Built as a CDAC final project: a Spring Boot backend traces real Java execution 
 - **Two views.** *Full analysis* shows stack, heap and the Focused box; *Normal* mode shows compact frames with arrays and objects drawn inline.
 - **State changes** per step, compile errors, runtime exceptions, program output and the raw JSON response.
 - **Accounts.** Email/password signup with OTP verification, login via HttpOnly JWT cookie, password reset.
+- **Run history.** Every *Run & visualize* is saved for the signed-in user with success/failure and the reason it failed (compiler errors, exception, blocked API, limit); `GET /api/runs` returns totals and recent runs. Source code is not stored.
 
 ![Full analysis: stack, heap, controls and the Focused box with a loop variable's history](docs/images/full-analysis-loops.png)
 
@@ -69,6 +70,7 @@ Run the tests with `mvn clean verify` in `backend/` and build the frontend with 
 
 - `GET /health` → `{"status":"ok"}`
 - `GET /api/auth/csrf`, `POST /api/auth/signup`, `/verify-email`, `/login`, `/logout`, `GET /api/auth/me`, password reset endpoints
+- `GET /api/runs` (signed in) → `totalRuns`, `successfulRuns`, `failedRuns`, 20 most recent runs
 - `POST /api/visualize` (signed in) with `{"code":"<Java source>"}` → status, trace steps (frames with variables, `calls` and `loops`, heap, line type, state changes), stdout, errors and metadata
 
 Full details: [backend/README.md](backend/README.md) and [backend/documentation/document.markdown](backend/documentation/document.markdown).
@@ -80,6 +82,7 @@ Full details: [backend/README.md](backend/README.md) and [backend/documentation/
 | Visualizer core (trace, stack, heap, statics, state changes) | Done |
 | Function-call boxes, loop boxes, stack-first layout, collapsible frames, compact variables | Done on `feature/function-box-implementation`; local build/browser check pending |
 | Accounts (signup, OTP, JWT login, reset) | Implemented; end-to-end verification pending |
+| Run history in the database | Implemented on the feature branch; `mvn clean verify` pending |
 | Docker, GitHub Actions CI/CD, Azure deployment | Planned |
 | DSA sheet / LeetCode problem picker | Future idea |
 
