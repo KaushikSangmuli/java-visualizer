@@ -21,10 +21,12 @@ import java.io.IOException;
 public class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
     private final JwtDecoder decoder;
     private final UserDetailsService users;
+    private final JwtTokenService tokens;
 
-    public JwtCookieAuthenticationFilter(JwtDecoder decoder, UserDetailsService users) {
+    public JwtCookieAuthenticationFilter(JwtDecoder decoder, UserDetailsService users, JwtTokenService tokens) {
         this.decoder = decoder;
         this.users = users;
+        this.tokens = tokens;
     }
 
     @Override
@@ -40,6 +42,9 @@ public class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
                             user, null, user.getAuthorities());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
+                    // Sliding session: an active user gets a fresh cookie once half its lifetime has passed,
+                    // so only inactivity (not a long editing session) signs them out.
+                    tokens.renewIfHalfExpired(response, jwt);
                 } catch (JwtException | org.springframework.security.core.userdetails.UsernameNotFoundException ignored) {
                     // Invalid or expired cookies remain unauthenticated and are handled by the normal entry point.
                 }

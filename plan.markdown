@@ -262,6 +262,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 
 ## 10. Change History
 
+### 2026-11-01 — Fix false logouts after running code
+
+**Technical analysis:** `/error` required a login, so any 403/500 was reported as 401 "Authentication required" and the frontend logged the user out; the JWT also expired 30 minutes after login regardless of activity. Now `/error` is open, CSRF failures return JSON 403, the session slides while the user is active, and the frontend refreshes the CSRF token and retries once, logging out only on a real 401.
+
+**Files changed:** backend `SecurityConfiguration.java`, `JwtCookieAuthenticationFilter.java`, `JwtTokenService.java`; frontend `App.jsx`; documentation, plans, `docs/HANDOVER.md`.
+
+**Verification:** Frontend behaviour tested in headless Chromium with a mock backend; backend not compiled here. Owner re-test pending.
+
 ### 2026-10-31 — Floating, draggable step controls
 
 **Technical analysis:** The previous/play/next buttons and timeline now float above the page in a panel the user drags anywhere by its grip; it stays where dropped while stepping and across reloads (per browser), stays inside the window on resize, and resets with a double-click. The trace card shows only before a trace exists.

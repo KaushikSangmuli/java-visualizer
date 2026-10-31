@@ -302,3 +302,11 @@ The frontend is wired to the backend JWT flow but has not been verified end-to-e
 - `src/styles.css` — `.floating-panel`, `.floating-grip`, `.floating-panel-body`, `.has-floating-controls` padding; removed `.trace-card.controls-only`.
 
 **Verification:** Bundled with esbuild and React 19 and exercised in headless Chromium with a real trace: no panel before running; default bottom centre (380,830 in a 1400×900 window); dragged to (144,209); unchanged after six Next clicks and a slider change; unchanged after page reload and a new run; pulled inside the window when resized to 700×600; double-click reset to bottom centre; arrow keys moved it. `pnpm run build` and a check in the owner's browser are pending.
+
+### 2026-11-01 — CSRF retry and no logout on server errors
+
+**Technical analysis:** Visualization and account requests now go through `securePost`, which sends the CSRF header and, if the server answers 403 (stale or missing security token), fetches a fresh token and retries once. Only a real 401 returns the user to the login page (the editor content is kept because `App` state survives the login screen); other non-OK responses show their message in the trace card ("Could not run the visualizer") without signing the user out. Paired with the backend fix that stopped every server error from being reported as 401.
+
+**Files and components changed:** `src/App.jsx` — `getCsrfToken(forceRefresh)`, new `securePost`, `authRequest`, `runCode`; request-error heading.
+
+**Verification:** Headless Chromium with a mock backend: a first run rejected with 403 refetched the token and succeeded without leaving the visualizer; a 500 showed "The backend returned an error (HTTP 500)" while staying signed in; a 401 showed the login page. Owner browser check pending.

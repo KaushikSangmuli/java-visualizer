@@ -78,8 +78,8 @@ export default function App() {
       .finally(() => setAuthLoading(false));
   }, []);
 
-  async function getCsrfToken() {
-    if (csrfToken) return csrfToken;
+  async function getCsrfToken(forceRefresh = false) {
+    if (csrfToken && !forceRefresh) return csrfToken;
     const tokenResponse = await fetch(apiUrl('/api/auth/csrf'), { credentials: 'include' });
     if (!tokenResponse.ok) throw new Error('Could not initialize secure sign-in.');
     const token = (await tokenResponse.json()).token ?? '';
@@ -87,13 +87,21 @@ export default function App() {
     return token;
   }
 
-  async function authRequest(path, payload) {
-    const token = await getCsrfToken();
-    const response = await fetch(apiUrl(path), {
+  // POST with the CSRF header. If the server rejects the security token (403, e.g. the cookie was
+  // replaced after a backend restart), fetch a fresh token and retry once instead of failing.
+  async function securePost(path, payload) {
+    const send = async (token) => fetch(apiUrl(path), {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': token ?? '' },
       body: JSON.stringify(payload),
     });
+    let response = await send(await getCsrfToken());
+    if (response.status === 403) response = await send(await getCsrfToken(true));
+    return response;
+  }
+
+  async function authRequest(path, payload) {
+    const response = await securePost(path, payload);
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.message ?? 'The request could not be completed.');
     return body;
@@ -121,17 +129,17 @@ export default function App() {
     setSelectedObjectId(null);
     setFocusedItem(null);
     try {
-      const result = await fetch(apiUrl('/api/visualize'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': await getCsrfToken() },
-        body: JSON.stringify({ code }),
-      });
-      const body = await result.json();
+      const result = await securePost('/api/visualize', { code });
+      const body = await result.json().catch(() => ({}));
       if (result.status === 401) {
         setAuthUser(null);
         setResponse(null);
         setRequestError('Your sign-in expired. Please sign in again to run the visualizer.');
+        return;
+      }
+      if (!result.ok) {
+        setResponse(null);
+        setRequestError(body.message ?? `The backend returned an error (HTTP ${result.status}). Please try again.`);
         return;
       }
       setResponse(body);
@@ -277,7 +285,7 @@ export default function App() {
                   <p>{busy ? 'Compiling and tracing in the Java backend.' : `Load “${selectedExampleName}” or write your own code, then run it.`}</p>
                 </div>
               )}
-              {requestError && <div className="request-error"><strong>Can’t connect to the visualizer</strong><p>{requestError}</p></div>}
+              {requestError && <div className="request-error"><strong>Could not run the visualizer</strong><p>{requestError}</p></div>}
               {response && response.status === 'compile_error' && (
                 <div className="compile-errors"><div className="error-title"><span>!</span><div><strong>Compilation failed</strong><small>Fix the source and try again.</small></div></div>
                   {(response.errors ?? []).map((error, index) => <div className="compile-error-row" key={`${error.line}-${index}`}><span>Line {error.line}</span><code>{error.message}</code></div>)}

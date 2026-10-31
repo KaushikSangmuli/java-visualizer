@@ -139,7 +139,7 @@ Java package names map to real nested directories such as `backend/src/main/java
 | `visualizer.cors.allowed-origins` | local Vite origins | Comma-separated browser origins allowed by CORS |
 | `visualizer.auth.login-max-failures` | `10` | Login failures allowed before a client is throttled |
 | `visualizer.auth.login-window-ms` | `900000` | Login failure throttle window |
-| `visualizer.auth.jwt-ttl-seconds` | `1800` | JWT cookie lifetime |
+| `visualizer.auth.jwt-ttl-seconds` | `1800` | JWT cookie lifetime; renewed on any authenticated request once half of it has passed, so only 30 minutes of inactivity signs a user out |
 | `visualizer.auth.cookie-secure` | local `false`, hosted `true` | Requires HTTPS when enabled |
 | `visualizer.auth.cookie-same-site` | local `Lax`, hosted `None` | Browser cookie cross-site policy (auth and CSRF cookies) |
 | `visualizer.trust-forwarded-for` | local `false`, hosted `true` | Use the last `X-Forwarded-For` entry (appended by the Container Apps ingress) as the client address for login throttling |
@@ -443,3 +443,15 @@ The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it h
 **Files changed:** `documentation/plan.markdown`, this document (runtime description now mentions the Security Manager options), root `plan.markdown`, `README.md`, `../docs/DEPLOYMENT.md` ("How things run automatically").
 
 **Verification:** Documentation-only change; verification facts come from the owner's report.
+
+### 2026-11-01 — Fix false "Authentication required" logouts; sliding login session
+
+**Technical analysis:** The owner was sent back to the login page after running custom code, and the following login answered "Authentication required." Cause of the misleading message: Spring Boot forwards every error response (403, 500) to `/error`, and `/error` required authentication, so any failure — a rejected CSRF token, an exception — was rewritten into 401 "Authentication required", which the frontend treats as an expired session. Contributing cause: the JWT cookie expired a fixed 30 minutes after login even during active use, so a long editing session ended in a real 401. Fixes: `/error` is permitted, so the real status reaches the client; CSRF/access-denied failures return JSON 403 `{"message":"Security token expired. Please try again.","code":"csrf"}`; the JWT cookie is re-issued on any authenticated request once less than half of its lifetime remains (sliding session, still 30 minutes of inactivity). The frontend retries once with a fresh CSRF token on 403 and no longer signs the user out on non-401 errors (see the frontend document).
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/config/SecurityConfiguration.java` — `securityFilterChain` permits `/error`, adds a JSON `accessDeniedHandler`, passes `JwtTokenService` to the cookie filter.
+- `src/main/java/com/example/demo/config/JwtCookieAuthenticationFilter.java` — constructor takes `JwtTokenService`; `doFilterInternal` calls `renewIfHalfExpired`.
+- `src/main/java/com/example/demo/service/auth/JwtTokenService.java` — new `renewIfHalfExpired`.
+
+**Verification:** Not compiled here (needs the Spring dependencies); the changes use standard Spring Security 6.2 APIs. The frontend half was tested in headless Chromium against a mock backend. Pending: owner pulls, runs `mvn clean verify`, restarts the backend and repeats the custom-code run and login; if a failure remains, the backend console now shows its real cause.

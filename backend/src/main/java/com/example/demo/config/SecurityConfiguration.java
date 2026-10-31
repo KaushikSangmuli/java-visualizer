@@ -35,6 +35,7 @@ public class SecurityConfiguration {
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, JwtDecoder decoder, UserDetailsService users,
+                                           com.example.demo.service.auth.JwtTokenService jwtTokens,
                                            @org.springframework.beans.factory.annotation.Value("${visualizer.auth.cookie-secure:false}") boolean secureCookie,
                                            @org.springframework.beans.factory.annotation.Value("${visualizer.auth.cookie-same-site:Lax}") String sameSite) throws Exception {
         // The CSRF cookie must travel like the auth cookie: with frontend and backend on different
@@ -48,19 +49,28 @@ public class SecurityConfiguration {
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/health", "/api/auth/csrf", "/api/auth/signup",
+                        // "/error" must be open: Spring Boot forwards every 403/500 there, and if it required
+                        // a login those errors would all turn into a misleading 401 that logs the user out.
+                        .requestMatchers("/error", "/health", "/api/auth/csrf", "/api/auth/signup",
                                 "/api/auth/verify-email", "/api/auth/verification-code/resend", "/api/auth/login",
                                 "/api/auth/password-reset/**").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
-                .addFilterBefore(new JwtCookieAuthenticationFilter(decoder, users),
+                .addFilterBefore(new JwtCookieAuthenticationFilter(decoder, users, jwtTokens),
                         org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
-                .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, exception) -> {
-                    response.setStatus(401);
-                    response.setContentType("application/json");
-                    response.getWriter().write("{\"message\":\"Authentication required.\"}");
-                }));
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            response.setStatus(401);
+                            response.setContentType("application/json");
+                            response.getWriter().write("{\"message\":\"Authentication required.\"}");
+                        })
+                        // Also used by the CSRF filter: a missing or stale security token is a 403, not a logout.
+                        .accessDeniedHandler((request, response, exception) -> {
+                            response.setStatus(403);
+                            response.setContentType("application/json");
+                            response.getWriter().write("{\"message\":\"Security token expired. Please try again.\",\"code\":\"csrf\"}");
+                        }));
         return http.build();
     }
 }

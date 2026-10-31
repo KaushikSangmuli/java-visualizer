@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
@@ -38,6 +39,15 @@ public class JwtTokenService {
         String token = encoder.encode(JwtEncoderParameters.from(
                 JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie(token, ttlSeconds).toString());
+    }
+
+    /** Re-issues the cookie when less than half of its lifetime is left. */
+    public void renewIfHalfExpired(HttpServletResponse response, Jwt jwt) {
+        Instant expiresAt = jwt.getExpiresAt();
+        if (expiresAt == null || jwt.getSubject() == null) return;
+        if (expiresAt.minusSeconds(ttlSeconds / 2).isBefore(Instant.now())) {
+            writeAuthCookie(response, jwt.getSubject());
+        }
     }
 
     public void clearAuthCookie(HttpServletResponse response) {
