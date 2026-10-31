@@ -6,7 +6,7 @@
 
 > **New here or lost the chat history?** Read [`docs/HANDOVER.md`](docs/HANDOVER.md) first (what was done, decisions, how to continue). The step-by-step deployment checklist is section 11 of this file; screen-by-screen details are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-**Overall project status (2026-11-01):** pull request #1 (`feature/function-box-implementation` → `main`, up to commit `4cd30d4`) passed CI: `mvn clean verify`, `pnpm run build` and the Docker build + image check all green on GitHub Actions. Merge is in progress; Azure, Brevo and GitHub deployment settings are next (section 11 checklist).
+**Overall project status (2026-11-01):** pull request #1 (`feature/function-box-implementation` → `main`, up to commit `4cd30d4`) passed CI: `mvn clean verify`, `pnpm run build` and the Docker build + image check all green on GitHub Actions. Merged to `main` (`bcfd81b`, then docs `d0edbef`); both `main` runs green and the backend image is published to GHCR. Next: GHCR visibility, GitHub environment, then Brevo and Azure (section 11 checklist).
 
 | Area | Status | Pending |
 |---|---|---|
@@ -19,8 +19,8 @@
 | Java collection views (list, linked list with node addresses, stack, queue, priority queue, set, map; size; stack/queue from code usage) | Done; `mvn clean verify` green in CI on PR #1 (2026-11-01) | Owner browser check |
 | Azure SQL `Instant`/`DATETIME2` mapping (UTC) and optional signup allowlist (off: signup open) | Done; `mvn clean verify` green in CI on PR #1 (2026-11-01) | Time mapping checked on first Azure deploy |
 | Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31 (H2 migration + integration test) | Azure SQL migration on first deploy; optional UI |
-| Stage 3 Docker image | Done: first build green in GitHub Actions (PR #1, 2026-11-01), image check passed (javac, `jdk.jdi`, uid 10001) | Publish to GHCR on merge; sample traces inside the container on Azure |
-| Stage 4 GitHub Actions CI | Done: first run green on PR #1 (2026-11-01) — backend `mvn verify`, frontend build, Docker build + image check | Green run on `main` after merge |
+| Stage 3 Docker image | Done: first build green in GitHub Actions (PR #1, 2026-11-01), image check passed (javac, `jdk.jdi`, uid 10001) | Published to GHCR from `main`; sample traces inside the container on Azure |
+| Stage 4 GitHub Actions CI | Done: first run green on PR #1 (2026-11-01) — backend `mvn verify`, frontend build, Docker build + image check | — (green on `main`, runs #2 and #4) |
 | Stage 5–6 Azure deployment (SWA Free, Container Apps, Azure SQL free, Brevo, GHCR, OIDC) | Workflow deploy jobs and step-by-step guide `docs/DEPLOYMENT.md` ready; skipped until Azure variables exist. Checklist by place (GitHub / Brevo / Azure) in section 11 | Steps G3 onward in section 11 |
 | Stage 7 production readiness / sandbox gate | User-code JVM sandboxed (Security Manager: no env/files/network/processes); blocklist gaps closed; per-user limits | Private beta first; per-user CPU/memory isolation and threat review before public launch |
 | Future: DSA sheet, company lists, LeetCode picker | Not started | Product decisions |
@@ -265,6 +265,12 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 
 ## 10. Change History
 
+### 2026-11-01 — Merged to main; image published
+
+- **What:** PR #1 merged (`bcfd81b`) and docs PR #2 merged (`d0edbef`); both `main` CI runs green, backend image pushed to GHCR, deploy jobs skipped as designed. Checklist G3–G4 ticked, image tag recorded.
+- **Files:** `plan.markdown`, `docs/HANDOVER.md`, `README.md`.
+- **Verification:** run results read from the GitHub API. GHCR package visibility could not be checked from the assistant's environment (owner to confirm on the package page).
+
 ### 2026-11-01 — CI green on pull request #1; deployment checklist grouped by place
 
 - **What:** first GitHub Actions run (PR #1 → `main`, run `41250485128`): backend `mvn clean verify`, frontend `pnpm run build`, Docker build and image check all passed; deploy jobs skipped as designed. Section 11 rewritten as a checklist grouped by where the work happens (GitHub part A, Brevo, Azure, GitHub part B, smoke test) with completed steps ticked.
@@ -443,7 +449,7 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 
 | Name | Where it comes from | Value |
 |---|---|---|
-| Image | G4, workflow log | `ghcr.io/kaushiksangmuli/java-visualizer/backend:<sha>` |
+| Image | G4, workflow log | `ghcr.io/kaushiksangmuli/java-visualizer/backend:d0edbef2ffa2990cce929193b9fae47926f0bf8f` (any later green `main` run's SHA also works) |
 | Resource group / region | A1 | `rg-java-visualizer` / ... |
 | SQL server / database | A2 | `....database.windows.net` / `javavisualizer` |
 | `DB_URL` | A2 | `jdbc:sqlserver://<server>.database.windows.net:1433;database=javavisualizer;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;` |
@@ -458,8 +464,8 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 
 - [x] **G1. Pull request #1** `feature/function-box-implementation` → `main` opened (2026-11-01).
 - [x] **G2. CI green on the pull request** (run `41250485128`): Backend tests (Maven) ✓, Frontend build (pnpm) ✓, Backend image (Docker + image check) ✓; deploy jobs skipped as expected. First real `mvn clean verify`, `pnpm run build` and Docker build of everything up to `4cd30d4`.
-- [ ] **G3. Merge pull request #1** (owner merging, 2026-11-01). The push to `main` runs CI again and publishes `ghcr.io/kaushiksangmuli/java-visualizer/backend:<merge-commit-sha>`.
-- [ ] **G4. Check the `main` run is green** (Actions tab → CI/CD → the run for the merge commit) and copy the image tag (commit SHA) from the **Backend image** job into the values table.
+- [x] **G3. Merge pull request #1** (merged 2026-11-01, merge commit `bcfd81b`; docs PR #2 merged after it, `main` = `d0edbef`). Each push to `main` runs CI again and publishes `ghcr.io/kaushiksangmuli/java-visualizer/backend:<commit-sha>`.
+- [x] **G4. Check the `main` run is green** (runs #2 and #4 green, deploy jobs skipped; latest image tag `d0edbef2ffa2990cce929193b9fae47926f0bf8f`) (Actions tab → CI/CD → the run for the merge commit) and copy the image tag (commit SHA) from the **Backend image** job into the values table.
 - [ ] **G5. Make the image public**: GitHub profile → **Packages** → `java-visualizer/backend` → **Package settings** → **Change visibility** → Public (or keep it private and add registry credentials in A5, see `DEPLOYMENT.md`).
 - [ ] **G6. Create the environment** `production`: repo **Settings → Environments → New environment** (optional: Required reviewers = yourself, so each deploy waits for approval).
 
