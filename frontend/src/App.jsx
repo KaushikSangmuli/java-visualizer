@@ -258,12 +258,9 @@ export default function App() {
               </article>
               {fullAnalysis && <article className="inspect-card panel heap-panel">
                 <div className="inspect-heading"><div><span className="inspect-kicker">02 / MEMORY</span><h3>Heap & statics</h3></div><span className="count-chip">{heap?.objects?.length ?? 0} objects</span></div>
-                <div className="inspect-scroll heap-scroll"><HeapPanel heap={heap} selectedId={selectedObjectId} onSelect={setSelectedObjectId} onFocus={setFocusedItem} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /></div>
-                {stateChanges && <div className="heap-state-changes">{stateChanges}</div>}
+                <div className="inspect-scroll heap-scroll"><HeapPanel heap={heap} footer={stateChanges && <div className="heap-state-changes">{stateChanges}</div>} selectedId={selectedObjectId} onSelect={setSelectedObjectId} onFocus={setFocusedItem} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /></div>
               </article>}
             </div>
-            {!fullAnalysis && stateChanges && <div className="panel normal-state-changes">{stateChanges}</div>}
-
             <article className={`trace-card panel ${step ? 'controls-only' : ''}`}>
               {/* Execution trace header (title, finished status, step counter) hidden for now: the slider shows progress.
               <div className="panel-heading trace-heading">
@@ -323,6 +320,8 @@ export default function App() {
                 </>
               )}
             </article>
+
+            {!fullAnalysis && stateChanges && <div className="panel normal-state-changes">{stateChanges}</div>}
 
             {/* Loop status panel hidden: each running loop now has its own box (iteration, condition) inside its stack frame.
             <LoopStatus loop={activeLoop} />

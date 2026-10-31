@@ -262,3 +262,15 @@ The frontend is wired to the backend JWT flow but has not been verified end-to-e
 - `src/examples.js` — Nested loops example.
 
 **Verification:** Bundled with esbuild and React 19 and rendered in headless Chromium against a mocked backend returning a real trace of the new example: nested boxes, in-loop call row, condition values and the `row` history (iter 1: 1, iter 2: 2) were checked in both modes. Run `pnpm run build` locally.
+
+### 2026-10-31 — Compact variables, collapsible frames, independent heap objects, fixed controls
+
+**Technical analysis:** Array elements no longer repeat a type per index: in the heap, the Focused box and nested inline arrays, a reference element shows only its colour-coded id (`#463`); the array's type is shown once in its header. Variable boxes are smaller in both modes (padding, minimum sizes, value cells, fonts). Each function frame has a collapse/expand button (expanded by default); the collapsed state is remembered per stack depth and method while stepping. Heap objects open and close independently (previously one shared "selected" id made opening a second object close both); following a reference also opens its target. The Call stack and Heap areas have a fixed height and the per-step State changes moved inside the heap scroll area (Full analysis) or below the controls (Normal mode), so the step controls stay at the same position on every step.
+
+**Files and components changed:**
+
+- `src/components/TracePanels.jsx` — `Value` compact reference mode; `InlineEntity`, `HeapPanel` array elements and `FocusedPanel` elements use it; `StackPanel` collapse state and button; `HeapPanel` keeps its own set of open objects and accepts a `footer`.
+- `src/App.jsx` — state changes passed as the heap footer; Normal-mode state changes placed below the controls.
+- `src/styles.css` — compact `.variable-box`, value shapes and `.array-element`; `.frame-collapse`; `.value-shape.compact`; fixed `.inspect-scroll` height.
+
+**Verification:** Headless Chromium with a real trace of a program with `int[]`, `int[][]` and `String[]`: the controls stayed at the same y-position on all 21 steps in both modes; three heap objects stayed open together and closing one left two open; a collapsed frame stayed collapsed after stepping. Run `pnpm run build` locally.

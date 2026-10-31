@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { innermostLoopAt, loopChain, loopKindLabel, loopVariableHistory } from '../loopHistory.js';
 
 const referenceColors = ['#4d88e8', '#16a085', '#d0783e', '#9866cf', '#d15478', '#1688a8', '#748d25', '#c15d45'];
@@ -19,8 +20,13 @@ function valueShape(value) {
   return 'primitive';
 }
 
-function Value({ value, onReference, className = '' }) {
+// `compact` is used for array elements: a reference shows only its colour-coded id (#463),
+// because the element type is already shown once in the array's header.
+function Value({ value, onReference, className = '', compact = false }) {
   if (!value) return <span className="muted">—</span>;
+  if (compact && value.referenceId && value.type !== 'java.lang.String' && value.type !== 'String') {
+    return <button className={`value-reference compact-reference ${className}`} style={{ '--reference-color': colorForId(value.referenceId) }} title={`${displayType(value.value)} · reference ${value.referenceId}`} onClick={() => onReference(value.referenceId)} type="button"><span className="value-shape compact">#{value.referenceId}</span></button>;
+  }
   const shape = valueShape(value);
   const style = value.referenceId ? { '--reference-color': colorForId(value.referenceId) } : undefined;
   const shownValue = shape === 'reference' ? `@${value.referenceId}` : value.referenceId ? displayType(value.value ?? 'null') : value.value ?? 'null';
@@ -34,7 +40,7 @@ function Value({ value, onReference, className = '' }) {
 function InlineEntity({ value, heap, onReference, visited = new Set(), depth = 0 }) {
   const entity = value?.referenceId ? heap?.objects?.find((object) => object.id === value.referenceId) : null;
   if (!entity || depth >= 5 || visited.has(entity.id)) {
-    return <Value value={{ ...value, type: displayType(value?.type) }} onReference={onReference} />;
+    return <Value compact={depth > 0} value={{ ...value, type: displayType(value?.type) }} onReference={onReference} />;
   }
 
   const nextVisited = new Set(visited).add(entity.id);
@@ -104,7 +110,14 @@ function LoopBox({ loop, variables, callsByLoop, renderLoopVariable }) {
 }
 
 export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalysis = true }) {
+  // Collapsed frames are remembered by stack depth + method, so a frame stays closed while the user steps.
+  const [collapsed, setCollapsed] = useState(() => new Set());
   if (frames.length === 0) return <div className="empty-state">Run a program to inspect its call stack.</div>;
+  const toggleFrame = (key) => setCollapsed((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
   return (
     <div className="frame-list">
       {frames.map((frame, index) => {
@@ -124,6 +137,9 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
           else frameCalls.push(call);
         }
         const depth = frames.length - 1 - index;
+        const frameKey = `${depth}-${frame.className}-${frame.method}`;
+        const isCollapsed = collapsed.has(frameKey);
+        const collapseButton = <button type="button" className="frame-collapse" aria-expanded={!isCollapsed} aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${frame.method}`} title={isCollapsed ? 'Expand' : 'Collapse'} onClick={() => toggleFrame(frameKey)}>{isCollapsed ? '▸' : '▾'}</button>;
         const callSite = frames[index + 1]?.line;
         const renderVariable = (variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} heap={fullAnalysis ? undefined : heap} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />;
         const renderLoopVariable = (variable, loop) => <VariableBox key={`${variable.name}-loop`} variable={variable} heap={fullAnalysis ? undefined : heap} onReference={onReference} onFocus={() => onFocus({ kind: 'loop-variable', name: variable.name, variable, depth, startLine: loop.startLine, activationStep: loop.activationStep, loopKind: loop.kind })} />;
@@ -133,21 +149,24 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
             <span className="normal-group-label">{label}</span>
             <div className="normal-variable-grid">{items.map(renderVariable)}</div>
           </div>;
-          return <article className="frame-card normal-frame" key={`${frame.className}-${frame.method}-${index}`}>
-            <div className="normal-frame-heading"><span className="normal-frame-name">{frame.method}</span><span className="normal-frame-return">returns {displayType(frame.returnType)}</span></div>
+          return <article className={`frame-card normal-frame ${isCollapsed ? 'frame-collapsed' : ''}`} key={`${frame.className}-${frame.method}-${index}`}>
+            <div className="normal-frame-heading">{collapseButton}<span className="normal-frame-name">{frame.method}</span><span className="normal-frame-return">returns {displayType(frame.returnType)}</span></div>
+            {!isCollapsed && <>
             {normalGroup('Parameters', parameters)}
             <FunctionCalls calls={frameCalls} />
             {normalGroup('Local variables', locals)}
             {loopBoxes}
             {normalGroup('Other', others)}
             {variables.length === 0 && <div className="empty-variables">No visible variables at this line.</div>}
+            </>}
           </article>;
         }
-        return <article className={`frame-card ${index === 0 ? 'frame-active' : ''}`} key={`${frame.className}-${frame.method}-${index}`}>
+        return <article className={`frame-card ${index === 0 ? 'frame-active' : ''} ${isCollapsed ? 'frame-collapsed' : ''}`} key={`${frame.className}-${frame.method}-${index}`}>
           <div className="frame-heading">
-            <span className="frame-rank">{index === 0 ? 'ACTIVE' : `CALLER ${index}`}</span>
+            <span className="frame-rank">{collapseButton}{index === 0 ? 'ACTIVE' : `CALLER ${index}`}</span>
             <span className="frame-signature"><strong>{frame.method}</strong><span> returns {displayType(frame.returnType)}</span></span>
           </div>
+          {!isCollapsed && <>
           <div className="frame-meta"><span>{displayType(frame.className)} · line {frame.line}</span>{callSite != null && <span className="call-site">called from line {callSite}</span>}</div>
           {parameters.length > 0 && <section className="variable-group parameter-group"><h5>Parameters</h5><div className="variable-grid">{parameters.map(renderVariable)}</div></section>}
           <FunctionCalls calls={frameCalls} />
@@ -155,13 +174,25 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
           {loopBoxes}
           {others.length > 0 && <section className="variable-group other-group"><h5>Other</h5><div className="variable-grid">{others.map(renderVariable)}</div></section>}
           {variables.length === 0 && <div className="empty-variables">No visible variables at this line.</div>}
+          </>}
         </article>;
       })}
     </div>
   );
 }
 
-export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect }) {
+export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect, footer = null }) {
+  // Each object opens and closes on its own; following a reference also opens its target.
+  const [openIds, setOpenIds] = useState(() => new Set());
+  useEffect(() => {
+    if (selectedId) setOpenIds((current) => current.has(selectedId) ? current : new Set(current).add(selectedId));
+  }, [selectedId]);
+  const setOpen = (id, open) => setOpenIds((current) => {
+    if (current.has(id) === open) return current;
+    const next = new Set(current);
+    if (open) next.add(id); else next.delete(id);
+    return next;
+  });
   const objects = heap?.objects ?? [];
   const statics = heap?.staticFields ?? [];
   if (!heap) return <div className="empty-state">Heap snapshots appear after a trace is available.</div>;
@@ -193,8 +224,8 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect }) 
                 style={{ '--reference-color': colorForId(object.id) }}
                 id={`heap-object-${object.id}`}
                 key={object.id}
-                open={selectedId === object.id}
-                onToggle={(event) => onSelect(event.currentTarget.open ? object.id : null)}
+                open={openIds.has(object.id)}
+                onToggle={(event) => { const open = event.currentTarget.open; setOpen(object.id, open); if (open) onSelect(object.id); else if (selectedId === object.id) onSelect(null); }}
                 onDoubleClick={() => onFocus({ kind: 'object', object })}
                 title="Double-click to focus this heap object"
               >
@@ -212,7 +243,7 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect }) 
                       <Value value={field.value} onReference={onReference} />
                     </div>
                   ))}
-                  {object.elements?.length > 0 && <div className="array-elements">{object.elements.map((value, index) => <div className="array-element" key={`element-${index}`} title={`${displayType(value.type)}: ${value.referenceId ? displayType(value.value) : value.value}`}><span className="array-index">[{index}]</span><span className="array-element-value">{value.referenceId ? <Value value={{ ...value, type: displayType(value.type) }} onReference={onReference} /> : value.value ?? 'null'}</span></div>)}</div>}
+                  {object.elements?.length > 0 && <div className="array-elements">{object.elements.map((value, index) => <div className="array-element" key={`element-${index}`} title={`${displayType(value.type)}: ${value.referenceId ? displayType(value.value) : value.value}`}><span className="array-index">[{index}]</span><span className="array-element-value">{value.referenceId ? <Value compact value={value} onReference={onReference} /> : value.value ?? 'null'}</span></div>)}</div>}
                   {object.expanded === false && <div className="object-meta">Expansion stopped by a configured limit.</div>}
                   {object.fields?.length === 0 && object.elements?.length === 0 && <div className="object-meta">No captured fields or elements.</div>}
                 </div>
@@ -221,6 +252,7 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect }) 
           </div>
         </section>
       ) : statics.length === 0 ? <div className="empty-state heap-empty">No reachable objects or user static fields at this step.</div> : null}
+      {footer}
     </div>
   );
 }
@@ -251,7 +283,7 @@ export function FocusedPanel({ focus, heap, onReference, onClear, trace = [], st
           {object && <div className="focused-object-details">
             {object.kind === 'array' && <div className="object-meta">Length {object.length}</div>}
             {object.fields?.map((field) => <div className="focused-field" key={field.name}><span>{field.name}<small>{displayType(field.type)}</small></span><Value value={{ ...field.value, type: displayType(field.value?.type) }} onReference={onReference} /></div>)}
-            {object.elements?.map((value, index) => <div className="focused-field" key={`element-${index}`}><span>[{index}]<small>{displayType(value.type)}</small></span><Value value={{ ...value, type: displayType(value.type) }} onReference={onReference} /></div>)}
+            {object.elements?.map((value, index) => <div className="focused-field" key={`element-${index}`}><span>[{index}]</span><Value compact value={value} onReference={onReference} /></div>)}
             {object.fields?.length === 0 && object.elements?.length === 0 && <div className="object-meta">No captured fields or elements.</div>}
           </div>}
         </div>
