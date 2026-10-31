@@ -13,6 +13,7 @@ Built as a CDAC final project: a Spring Boot backend traces real Java execution 
 - **Function call boxes.** A caller shows the call it is waiting on, e.g. `result = fun_add(0, 4)`, and after the return `result = 4 <= fun_add(0, 4)`. Hover to see the call as written (`fun_add(result, number)`). Works for recursion, several calls on one line and constructors (`n = Node@42 <= new Node(5)`).
 - **Loop boxes.** Each running loop (`for`, for-each, `while`, `do-while`) is a box inside its function showing the iteration, its own variables, the calls made inside it and nested loops. The top-right corner shows the ending condition with live values (`i < times` → **`2 < 4`**) and ✓/✗ when it is checked. Double-click a loop variable to see its value in every iteration so far.
 - **Heap & statics.** Objects, arrays, collections, aliases and cycles, linked to the variables that reference them by colour.
+- **Floating step controls.** Previous / play / next and the timeline float above the page; drag them anywhere and they stay there (double-click the grip to reset).
 - **Two views.** *Full analysis* shows stack, heap and the Focused box; *Normal* mode shows compact frames with arrays and objects drawn inline.
 - **State changes** per step, compile errors, runtime exceptions, program output and the raw JSON response.
 - **Accounts.** Email/password signup with OTP verification, login via HttpOnly JWT cookie, password reset.

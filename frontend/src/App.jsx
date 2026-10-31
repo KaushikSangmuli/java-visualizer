@@ -4,6 +4,7 @@ import { ConsolePanel, FocusedPanel, HeapPanel, LoopStatus, StackPanel } from '.
 import { examples } from './examples.js';
 import { loopAtTraceStep } from './loopAnalysis.js';
 import AuthPanel from './components/AuthPanel.jsx';
+import FloatingPanel from './components/FloatingPanel.jsx';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 const apiUrl = (path) => `${API_BASE}${path}`;
@@ -185,7 +186,7 @@ export default function App() {
   if (!authUser) return <AuthPanel standalone onClose={() => {}} onRequest={authRequest} onLogin={setAuthUser} />;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${step ? 'has-floating-controls' : ''}`}>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Java Visualizer home">
           <span className="brand-mark"><Icon name="code" size={21} /></span>
@@ -261,7 +262,7 @@ export default function App() {
                 <div className="inspect-scroll heap-scroll"><HeapPanel heap={heap} footer={stateChanges && <div className="heap-state-changes">{stateChanges}</div>} selectedId={selectedObjectId} onSelect={setSelectedObjectId} onFocus={setFocusedItem} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /></div>
               </article>}
             </div>
-            <article className={`trace-card panel ${step ? 'controls-only' : ''}`}>
+            {!step && <article className="trace-card panel">
               {/* Execution trace header (title, finished status, step counter) hidden for now: the slider shows progress.
               <div className="panel-heading trace-heading">
                 <div className="panel-title-group"><span className="panel-icon trace-icon"><Icon name="play" size={16} /></span><div><h2>Execution trace</h2><p>{response ? statusCaption : 'Your program, one moment at a time'}</p></div></div>
@@ -290,8 +291,11 @@ export default function App() {
               {response && response.status !== 'compile_error' && trace.length === 0 && !requestError && (
                 <div className="request-error"><strong>{response.status?.replaceAll('_', ' ') ?? 'No trace returned'}</strong><p>{response.message ?? 'The backend returned no trace steps.'}</p></div>
               )}
-              {step && (
-                <>
+            </article>}
+
+            {/* Step controls float above the page; the learner can drag them anywhere and they stay there. */}
+            {step && (
+                <FloatingPanel storageKey="java-visualizer.step-controls.position" label="step controls">
                   {/* Step context hidden for now: event badge, source line, explanation, line type and return value.
                       The editor highlights the line and call boxes show return values.
                   <div className="step-context">
@@ -317,9 +321,8 @@ export default function App() {
                       <div className="timeline-labels"><span>STEP {currentStepIndex + 1} / {trace.length}</span><span>{trace.length ? `${trace.length} EVENTS` : 'NO EVENTS'}</span></div>
                     </div>
                   </div>
-                </>
-              )}
-            </article>
+                </FloatingPanel>
+            )}
 
             {!fullAnalysis && stateChanges && <div className="panel normal-state-changes">{stateChanges}</div>}
 

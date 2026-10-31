@@ -48,7 +48,8 @@ GitHub: `KaushikSangmuli/java-visualizer` (public for now; the owner may make it
 | `865e09c`, `5a5f53a` | Compact variable boxes, collapsible function frames, heap objects open independently (bug fix), fixed-position step controls, no per-index array types. Added `CLAUDE.md` documentation rules. |
 | `5590aa3` | Run history in the database (`visualization_run`, Flyway V3), `GET /api/runs`; integration test fixed for authentication. |
 | `1c08d1d` | Deployment readiness: user-code sandbox (Security Manager), blocklist gaps (`getenv`, `System::exit`), real client IP behind Azure ingress and per-account rate limits, cross-site CSRF cookie, `ddl-auto=none` on SQL Server, Flyway V4 drops unused Spring Session tables, Dockerfile fixes, CI/CD workflow, Static Web Apps config, `docs/DEPLOYMENT.md`. |
-| `e5e023b`, `40206a2`, this file | Status refresh (owner verified `mvn clean verify` and the UI), handover and deployment runbook. |
+| `e5e023b`, `40206a2`, `79ae3b5` | Status refresh (owner verified `mvn clean verify` and the UI), handover and deployment runbook. |
+| (next commit) | Floating, draggable step controls that stay where dropped (remembered per browser). |
 
 ## 4. Key decisions and why
 
@@ -84,6 +85,8 @@ Open `http://localhost:5173`, sign up, use OTP `1234`. Tests: `mvn clean verify`
 
 - **Verified on the owner's machine:** `mvn clean verify` passes (4 warnings, not yet reviewed) up to commit `5590aa3`; the UI works end to end locally; frontend declared complete.
 - **Not yet built by Maven:** commit `1c08d1d` and later (sandbox, V4, CSRF, CI/CD). First build = CI on the pull request.
+- **Not yet checked in the owner's browser:** floating step controls (tested in headless Chromium).
+- **Open pre-deployment items (proposed, awaiting owner's go-ahead):** Azure SQL date/time mapping fix (`hibernate.type.preferred_instant_jdbc_type=TIMESTAMP` for SQL Server profiles, `-Duser.timezone=UTC` in the image); optional signup allowlist for the private beta.
 - **Not started:** Azure resources (see the runbook in `plan.markdown` section 11).
 
 ## 7. What to do next

@@ -13,7 +13,7 @@
 | Visualizer core (compile, JDI trace, stack, heap, statics, metadata, state changes) | Done; user-verified with samples | Full sample matrix in browser |
 | Function-call boxes (waiting/returned rows in caller frames) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31; owner checked the UI in the browser | Merge to `main` |
 | Loop boxes (iteration, condition corner, nested loops, per-iteration history) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31; owner checked the UI in the browser | Merge to `main` |
-| Stack-first trace layout, compact variable boxes, collapsible frames, fixed step controls, heap objects open independently | Done; owner checked the UI in the browser and declared the frontend complete (2026-10-31) | First CI frontend build |
+| Stack-first trace layout, compact variable boxes, collapsible frames, floating draggable step controls, heap objects open independently | Done; owner checked the UI in the browser and declared the frontend complete (2026-10-31) | First CI frontend build |
 | Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Working locally with H2 and OTP `1234` (owner, 2026-10-31); build and H2 migrations verified by `mvn clean verify` | Azure SQL migration, Brevo email and cross-site cookies on first deploy |
 | Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31 (H2 migration + integration test) | Azure SQL migration on first deploy; optional UI |
 | Stage 3 Docker image | Dockerfile ready (dependency cache, non-root, JDK 21, writable H2 folder); local `docker run` documented | First build in GitHub Actions; sample traces inside the container |
@@ -261,6 +261,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
 
 ## 10. Change History
+
+### 2026-10-31 — Floating, draggable step controls
+
+**Technical analysis:** The previous/play/next buttons and timeline now float above the page in a panel the user drags anywhere by its grip; it stays where dropped while stepping and across reloads (per browser), stays inside the window on resize, and resets with a double-click. The trace card shows only before a trace exists.
+
+**Files changed:** frontend `components/FloatingPanel.jsx` (new), `App.jsx`, `styles.css`; frontend documentation and plan; this file; `README.md`; `docs/HANDOVER.md`.
+
+**Verification:** Headless-browser test with a real trace (default position, drag, stepping, reload, resize, reset, keyboard). `pnpm run build` and owner browser check pending.
 
 ### 2026-10-31 — Handover document and deployment runbook
 
