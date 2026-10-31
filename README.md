@@ -86,7 +86,8 @@ Full details: [backend/README.md](backend/README.md) and [backend/documentation/
 | Function-call boxes, loop boxes, stack-first layout, collapsible frames, compact variables | Done and verified locally (tests pass, UI checked) |
 | Accounts (signup, OTP, JWT login, reset) | Working locally (H2, OTP `1234`); Azure SQL + email pending first deploy |
 | Run history in the database | Done and verified locally (`mvn clean verify`) |
-| Docker image, GitHub Actions CI/CD, Azure deployment config | Ready; Azure resources not created yet ([deployment guide](docs/DEPLOYMENT.md)) |
+| Docker image, GitHub Actions CI/CD | Done: first CI run green (tests, frontend build, Docker image) |
+| Azure deployment | In progress: checklist in [plan.markdown](plan.markdown) §11, guide in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | DSA sheet / LeetCode problem picker | Future idea |
 
 **New to the project or resuming work?** Start with [docs/HANDOVER.md](docs/HANDOVER.md). The detailed plan, status, deployment runbook and change history live in [plan.markdown](plan.markdown), [backend/documentation](backend/documentation/) and [frontend/documentation](frontend/documentation/).

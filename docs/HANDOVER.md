@@ -2,7 +2,7 @@
 
 This file lets anyone (you, a teammate, or a new AI session) pick the project up without the chat history. Read it first, then [`plan.markdown`](../plan.markdown) (status table, stages, change history) and [`DEPLOYMENT.md`](DEPLOYMENT.md) (exact Azure steps). Working rules for every change are in [`CLAUDE.md`](../CLAUDE.md).
 
-*Last updated: 2026-10-31.*
+*Last updated: 2026-11-01.*
 
 ---
 
@@ -54,7 +54,8 @@ GitHub: `KaushikSangmuli/java-visualizer` (public for now; the owner may make it
 | `9d57737` | Security review of that fix (no bypass); sliding session capped at 12 hours after login; `JwtTokenServiceTest`. |
 | `ec0031d` | DSA views for Java collections (list, linked list nodes with addresses, stack, queue, priority queue, set, map; size); stack/queue from code usage; Collections example. |
 | `913decd` | Tree diagrams: user binary trees (variable highlights) and TreeMap/TreeSet red-black trees; BST example. |
-| (next commit, 2026-11-01) | Azure SQL time mapping and optional signup allowlist (off). |
+| `4cd30d4` | Azure SQL time mapping and optional signup allowlist (off). |
+| PR #1 (2026-11-01) | Pull request to `main`; first CI run all green (Maven tests, pnpm build, Docker image). Deployment checklist regrouped by GitHub / Brevo / Azure. |
 
 ## 4. Key decisions and why
 
@@ -88,20 +89,20 @@ pnpm run dev
 
 Open `http://localhost:5173`, sign up, use OTP `1234`. Tests: `mvn clean verify` in `backend/`. Eclipse tips: if you get `ClassNotFoundException`, do Refresh → Maven → Update Project (Force Update) → Project → Clean. Migrations run automatically on start.
 
-## 6. Where things stand (2026-10-31)
+## 6. Where things stand (2026-11-01)
 
 - **Verified on the owner's machine:** `mvn clean verify` passes (4 warnings, not yet reviewed) up to commit `5590aa3`; the UI works end to end locally; frontend declared complete.
-- **Not yet built by Maven:** commit `1c08d1d` and later (sandbox, V4, CSRF, CI/CD). First build = CI on the pull request.
-- **Collection views and tree diagrams (2026-11-01):** verified with the real tracer and in headless Chromium; `mvn clean verify` and owner browser check pending.
+- **Verified in CI (PR #1, all commits up to `4cd30d4`):** `mvn clean verify`, `pnpm run build`, Docker build + image check all green. Merge to `main` in progress.
+- **Collection views and tree diagrams (2026-11-01):** verified with the real tracer, headless Chromium and CI; owner browser check pending.
 - **Not yet checked in the owner's browser:** floating step controls (tested in headless Chromium); login-session fix from 2026-11-01 (owner hit a false "Authentication required" after running custom code).
 - **Pre-deployment items done (2026-11-01):** Azure SQL time mapping (UTC `TIMESTAMP` for `Instant`) and an optional signup allowlist, left off so anyone can sign up (`ALLOWED_SIGNUP_EMAILS` can restrict it later).
-- **Not started:** Azure resources (see the runbook in `plan.markdown` section 11).
+- **Not started:** Brevo, Azure resources and GitHub deployment settings (checklist by place in `plan.markdown` section 11).
 
 ## 7. What to do next
 
-1. Open a pull request `feature/function-box-implementation` → `main`; wait for CI (backend tests, frontend build, Docker build). Fix anything red.
-2. Merge. The push builds and publishes the backend image to GHCR.
-3. Follow the deployment runbook (`plan.markdown` §11, details in `DEPLOYMENT.md`) step by step, ticking the checklist as you go.
+1. ~~Open a pull request and get CI green~~ (done, PR #1).
+2. Merge PR #1; check the `main` run is green and note the image tag; make the GHCR package public; create the GitHub environment `production`.
+3. Brevo and Azure steps, then GitHub variables/secret and the first deploy — the checklist grouped by place in `plan.markdown` §11 (details in `DEPLOYMENT.md`). Tick each box as it is done.
 4. Smoke-test in Chrome/Edge; set the budget alert.
 5. Later: review the 4 Maven warnings; decide whether to delete the commented-out frontend code; custom domain (fixes Safari); production-readiness review before public launch; account deletion; optional "My runs" UI.
 

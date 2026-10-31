@@ -6,7 +6,7 @@
 
 > **New here or lost the chat history?** Read [`docs/HANDOVER.md`](docs/HANDOVER.md) first (what was done, decisions, how to continue). The step-by-step deployment checklist is section 11 of this file; screen-by-screen details are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-**Overall project status (2026-10-31):** the last change set verified on the developer machine is commit `5590aa3` (run history). The deployment-readiness commit `1c08d1d` (sandbox, CSRF cookie, V4, CI/CD) has not been built by Maven yet; its first build is the pull-request CI run.
+**Overall project status (2026-11-01):** pull request #1 (`feature/function-box-implementation` → `main`, up to commit `4cd30d4`) passed CI: `mvn clean verify`, `pnpm run build` and the Docker build + image check all green on GitHub Actions. Merge is in progress; Azure, Brevo and GitHub deployment settings are next (section 11 checklist).
 
 | Area | Status | Pending |
 |---|---|---|
@@ -15,13 +15,13 @@
 | Loop boxes (iteration, condition corner, nested loops, per-iteration history) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31; owner checked the UI in the browser | Merge to `main` |
 | Stack-first trace layout, compact variable boxes, collapsible frames, floating draggable step controls, heap objects open independently | Done; owner checked the UI in the browser and declared the frontend complete (2026-10-31) | First CI frontend build |
 | Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Working locally with H2 and OTP `1234` (owner, 2026-10-31); build and H2 migrations verified by `mvn clean verify` | Azure SQL migration, Brevo email and cross-site cookies on first deploy |
-| Tree diagrams (user binary trees with variable highlights; TreeMap/TreeSet red-black trees) | Done on `feature/function-box-implementation` (2026-11-01) | `mvn clean verify`, owner browser check |
-| Java collection views (list, linked list with node addresses, stack, queue, priority queue, set, map; size; stack/queue from code usage) | Done on `feature/function-box-implementation` (2026-11-01) | `mvn clean verify`, owner browser check |
-| Azure SQL `Instant`/`DATETIME2` mapping (UTC) and optional signup allowlist (off: signup open) | Done on `feature/function-box-implementation` (2026-11-01) | `mvn clean verify`; time mapping checked on first Azure deploy |
+| Tree diagrams (user binary trees with variable highlights; TreeMap/TreeSet red-black trees) | Done; `mvn clean verify` green in CI on PR #1 (2026-11-01) | Owner browser check |
+| Java collection views (list, linked list with node addresses, stack, queue, priority queue, set, map; size; stack/queue from code usage) | Done; `mvn clean verify` green in CI on PR #1 (2026-11-01) | Owner browser check |
+| Azure SQL `Instant`/`DATETIME2` mapping (UTC) and optional signup allowlist (off: signup open) | Done; `mvn clean verify` green in CI on PR #1 (2026-11-01) | Time mapping checked on first Azure deploy |
 | Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31 (H2 migration + integration test) | Azure SQL migration on first deploy; optional UI |
-| Stage 3 Docker image | Dockerfile ready (dependency cache, non-root, JDK 21, writable H2 folder); local `docker run` documented | First build in GitHub Actions; sample traces inside the container |
-| Stage 4 GitHub Actions CI | `.github/workflows/ci-cd.yml`: backend `mvn verify`, frontend build, Docker build + image check | First green run on a pull request |
-| Stage 5–6 Azure deployment (SWA Free, Container Apps, Azure SQL free, Brevo, GHCR, OIDC) | Workflow deploy jobs and step-by-step guide `docs/DEPLOYMENT.md` ready; skipped until Azure variables exist | Create Azure resources, set GitHub variables/secrets, first deploy and smoke test |
+| Stage 3 Docker image | Done: first build green in GitHub Actions (PR #1, 2026-11-01), image check passed (javac, `jdk.jdi`, uid 10001) | Publish to GHCR on merge; sample traces inside the container on Azure |
+| Stage 4 GitHub Actions CI | Done: first run green on PR #1 (2026-11-01) — backend `mvn verify`, frontend build, Docker build + image check | Green run on `main` after merge |
+| Stage 5–6 Azure deployment (SWA Free, Container Apps, Azure SQL free, Brevo, GHCR, OIDC) | Workflow deploy jobs and step-by-step guide `docs/DEPLOYMENT.md` ready; skipped until Azure variables exist. Checklist by place (GitHub / Brevo / Azure) in section 11 | Steps G3 onward in section 11 |
 | Stage 7 production readiness / sandbox gate | User-code JVM sandboxed (Security Manager: no env/files/network/processes); blocklist gaps closed; per-user limits | Private beta first; per-user CPU/memory isolation and threat review before public launch |
 | Future: DSA sheet, company lists, LeetCode picker | Not started | Product decisions |
 
@@ -265,6 +265,12 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 
 ## 10. Change History
 
+### 2026-11-01 — CI green on pull request #1; deployment checklist grouped by place
+
+- **What:** first GitHub Actions run (PR #1 → `main`, run `41250485128`): backend `mvn clean verify`, frontend `pnpm run build`, Docker build and image check all passed; deploy jobs skipped as designed. Section 11 rewritten as a checklist grouped by where the work happens (GitHub part A, Brevo, Azure, GitHub part B, smoke test) with completed steps ticked.
+- **Files:** `plan.markdown` (status table, section 11), `docs/HANDOVER.md` (sections 3, 6, 7), `README.md` (status).
+- **Verification:** CI results read from the GitHub API. Merge, image publish on `main` and all Azure steps are still pending.
+
 ### 2026-11-01 — Azure SQL time mapping and optional signup allowlist
 
 **Technical analysis:** SQL Server profiles bind `Instant` as `TIMESTAMP` in UTC (matching the `DATETIME2` columns) and the image runs in UTC, so login/OTP/run dates can be read on Azure SQL. Added an optional signup allowlist (`ALLOWED_SIGNUP_EMAILS`), left empty so anyone can sign up.
@@ -437,27 +443,52 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 
 | Name | Where it comes from | Value |
 |---|---|---|
-| Image | step 0, workflow log | `ghcr.io/kaushiksangmuli/java-visualizer/backend:<sha>` |
-| Resource group / region | step 1 | `rg-java-visualizer` / ... |
-| SQL server / database | step 2 | `....database.windows.net` / `javavisualizer` |
-| `DB_URL` | step 2 | `jdbc:sqlserver://<server>.database.windows.net:1433;database=javavisualizer;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;` |
-| Brevo sender | step 3 | ... |
-| `FRONTEND_URL` | step 5 | `https://....azurestaticapps.net` |
-| Container App name / `BACKEND_URL` | step 6 | ... / `https://....azurecontainerapps.io` |
-| Managed identity client ID | step 7 | ... |
+| Image | G4, workflow log | `ghcr.io/kaushiksangmuli/java-visualizer/backend:<sha>` |
+| Resource group / region | A1 | `rg-java-visualizer` / ... |
+| SQL server / database | A2 | `....database.windows.net` / `javavisualizer` |
+| `DB_URL` | A2 | `jdbc:sqlserver://<server>.database.windows.net:1433;database=javavisualizer;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;` |
+| Brevo sender | B2 | ... |
+| `FRONTEND_URL` | A4 | `https://....azurestaticapps.net` |
+| Container App name / `BACKEND_URL` | A5 | ... / `https://....azurecontainerapps.io` |
+| Managed identity client ID | A6 | ... |
 
-**Steps**
+**Checklist by place** (do the groups in this order: GitHub part A → Brevo → Azure → GitHub part B → smoke test; Brevo and the Azure steps can be done in parallel). Status as of 2026-11-01.
 
-- [ ] **0. Merge and publish the image.** Pull request `feature/function-box-implementation` → `main`; CI must pass (backend tests, frontend build, Docker build + image check). Merge. The push publishes `ghcr.io/kaushiksangmuli/java-visualizer/backend:<sha>` (deploy jobs skip — expected). Set the GHCR package visibility to Public (or add registry credentials later).
-- [ ] **1. Resource group.** `rg-java-visualizer` in one region (e.g. Central India); use it for everything.
-- [ ] **2. Azure SQL Database (free offer).** Apply the free offer; database `javavisualizer`; new server with SQL authentication; free-limit behaviour **Auto-pause until next month**; networking: allow Azure services. Tables are created by Flyway on first backend start (V1–V4).
-- [ ] **3. Brevo.** Free account, verify the sender address, create an API key.
-- [ ] **4. JWT secret.** Generate 32+ random characters (PowerShell command in `DEPLOYMENT.md`).
-- [ ] **5. Static Web App (Free).** Deployment source **Other**; record `FRONTEND_URL`; copy the deployment token.
-- [ ] **6. Container App (Consumption).** Image from step 0, ingress external on port 8080, 1 vCPU / 2 Gi, min 0 / max 1 replicas; secrets `db-password`, `jwt-secret`, `brevo-api-key`; env vars `SPRING_PROFILES_ACTIVE=azure`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `VISUALIZER_JWT_SECRET`, `VISUALIZER_BREVO_API_KEY`, `VISUALIZER_EMAIL_SENDER`, `CORS_ALLOWED_ORIGINS=<FRONTEND_URL>`; probes `GET /health`. Record `BACKEND_URL`; check `BACKEND_URL/health` → `{"status":"ok"}`.
-- [ ] **7. GitHub → Azure access (OIDC).** User-assigned managed identity with a federated credential for repo `KaushikSangmuli/java-visualizer`, environment `production`; Contributor on the resource group. GitHub environment `production`. Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINERAPP_NAME`, `BACKEND_URL`; secret `AZURE_STATIC_WEB_APPS_API_TOKEN`.
-- [ ] **8. First deploy and smoke test.** Actions → CI/CD → Run workflow on `main`. Then in Chrome/Edge: open `FRONTEND_URL`, sign up, receive the emailed code, verify, sign in, run "Nested loops with a function call", check `GET /api/runs` count increases.
-- [ ] **9. Guardrails.** Budget with alerts at 50 % / 100 %; check the SQL free allowance after a week; rehearse rollback (activate previous revision or redeploy the previous image tag).
-- [ ] **10. Afterwards.** Review the 4 Maven warnings; decide on deleting commented-out frontend code; custom domain (fixes Safari/iOS login); Stage 7 production-readiness review before inviting the public.
+### GitHub — part A (before Azure)
+
+- [x] **G1. Pull request #1** `feature/function-box-implementation` → `main` opened (2026-11-01).
+- [x] **G2. CI green on the pull request** (run `41250485128`): Backend tests (Maven) ✓, Frontend build (pnpm) ✓, Backend image (Docker + image check) ✓; deploy jobs skipped as expected. First real `mvn clean verify`, `pnpm run build` and Docker build of everything up to `4cd30d4`.
+- [ ] **G3. Merge pull request #1** (owner merging, 2026-11-01). The push to `main` runs CI again and publishes `ghcr.io/kaushiksangmuli/java-visualizer/backend:<merge-commit-sha>`.
+- [ ] **G4. Check the `main` run is green** (Actions tab → CI/CD → the run for the merge commit) and copy the image tag (commit SHA) from the **Backend image** job into the values table.
+- [ ] **G5. Make the image public**: GitHub profile → **Packages** → `java-visualizer/backend` → **Package settings** → **Change visibility** → Public (or keep it private and add registry credentials in A5, see `DEPLOYMENT.md`).
+- [ ] **G6. Create the environment** `production`: repo **Settings → Environments → New environment** (optional: Required reviewers = yourself, so each deploy waits for approval).
+
+### Brevo (OTP email)
+
+- [ ] **B1. Free account** at brevo.com.
+- [ ] **B2. Verify the sender address** (Senders, domains & dedicated IPs → add sender → click the link in the email). Record it as `VISUALIZER_EMAIL_SENDER`.
+- [ ] **B3. API key** (SMTP & API → API keys → Generate). Store it in a password manager; it goes into the Container App secret `brevo-api-key`.
+
+### Azure
+
+- [ ] **A1. Resource group** `rg-java-visualizer` in one region (e.g. Central India); use it for everything below.
+- [ ] **A2. Azure SQL Database (free offer)**: apply the free offer; database `javavisualizer`; new server with SQL authentication (record login, store password); free-limit behaviour **Auto-pause until next month**; networking: allow Azure services. Record `DB_URL`. Tables are created by Flyway on the first backend start (V1–V4).
+- [ ] **A3. JWT secret**: generate 32+ random characters (PowerShell command in `DEPLOYMENT.md`); store it.
+- [ ] **A4. Static Web App (Free)**: deployment source **Other**; record `FRONTEND_URL`; copy the deployment token (**Manage deployment token**).
+- [ ] **A5. Container App (Consumption)**: image from G4, ingress external on port 8080, 1 vCPU / 2 Gi, min 0 / max 1 replicas; secrets `db-password`, `jwt-secret`, `brevo-api-key`; env vars `SPRING_PROFILES_ACTIVE=azure`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `VISUALIZER_JWT_SECRET`, `VISUALIZER_BREVO_API_KEY`, `VISUALIZER_EMAIL_SENDER`, `CORS_ALLOWED_ORIGINS=<FRONTEND_URL>` (leave `ALLOWED_SIGNUP_EMAILS` unset); probes `GET /health`. Record `BACKEND_URL`; check `BACKEND_URL/health` → `{"status":"ok"}`.
+- [ ] **A6. Managed identity for GitHub (OIDC)**: user-assigned identity `id-jv-github`; federated credential for org `KaushikSangmuli`, repo `java-visualizer`, entity Environment `production`; role **Contributor** on `rg-java-visualizer`. Record its client ID, the tenant ID and the subscription ID.
+- [ ] **A7. Budget**: Cost Management → Budgets, monthly (e.g. ₹200), email alerts at 50 % and 100 %.
+
+### GitHub — part B (after Azure)
+
+- [ ] **G7. Repository variables** (Settings → Secrets and variables → Actions → Variables): `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP=rg-java-visualizer`, `AZURE_CONTAINERAPP_NAME`, `BACKEND_URL`.
+- [ ] **G8. Repository secret**: `AZURE_STATIC_WEB_APPS_API_TOKEN` = deployment token from A4.
+- [ ] **G9. First deploy**: Actions → CI/CD → **Run workflow** on `main`; both deploy jobs must be green (backend health check, frontend upload).
+
+### Smoke test and afterwards
+
+- [ ] **S1. Smoke test** in Chrome/Edge: open `FRONTEND_URL`, sign up, receive the emailed code, verify, sign in, run "Nested loops with a function call", check that `GET /api/runs` counts the run.
+- [ ] **S2. Guardrails**: check the SQL free allowance after a week; rehearse rollback (activate the previous revision or redeploy the previous image tag).
+- [ ] **S3. Later**: review the 4 Maven warnings; decide on deleting commented-out frontend code; custom domain (fixes Safari/iOS login); Stage 7 production-readiness review before inviting the public.
 
 **After the first deploy, every merge to `main` redeploys automatically** (tests → image → Container App → health check → frontend). To require approval first, add a required reviewer to the GitHub environment `production`.
