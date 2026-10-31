@@ -86,7 +86,7 @@ Full details: [backend/README.md](backend/README.md) and [backend/documentation/
 | Docker image, GitHub Actions CI/CD, Azure deployment config | Ready; Azure resources not created yet ([deployment guide](docs/DEPLOYMENT.md)) |
 | DSA sheet / LeetCode problem picker | Future idea |
 
-The detailed plan, status and change history live in [plan.markdown](plan.markdown), [backend/documentation](backend/documentation/) and [frontend/documentation](frontend/documentation/).
+**New to the project or resuming work?** Start with [docs/HANDOVER.md](docs/HANDOVER.md). The detailed plan, status, deployment runbook and change history live in [plan.markdown](plan.markdown), [backend/documentation](backend/documentation/) and [frontend/documentation](frontend/documentation/).
 
 ## Deployment
 

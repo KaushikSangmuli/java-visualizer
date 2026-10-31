@@ -1,5 +1,7 @@
 # Working rules for this repository
 
+Before starting, read `docs/HANDOVER.md` (project summary, decisions, status, next steps) and the status table and section 11 (deployment runbook) of `plan.markdown`. Keep `docs/HANDOVER.md` sections 3 (timeline), 6 (status) and 7 (next steps) current when work is completed.
+
 ## Documentation must be updated with every change
 
 Every code change is committed together with its documentation. Do not leave documentation for later.

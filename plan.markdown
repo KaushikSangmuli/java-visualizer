@@ -4,6 +4,8 @@
 
 **Status:** Phase-two implementation is underway (see the status table below; visualization features added 2026-10-31 are on `feature/function-box-implementation`). Email/password authentication now uses stateless JWT cookies, login-first UI, and a local-only OTP bypass. Locally, `mvn clean verify` passes and the app works end to end with H2 (owner, 2026-10-31). The repository is deployment-ready (Docker image, CI/CD workflow, `docs/DEPLOYMENT.md`); Azure resources and provider credentials are not created yet.
 
+> **New here or lost the chat history?** Read [`docs/HANDOVER.md`](docs/HANDOVER.md) first (what was done, decisions, how to continue). The step-by-step deployment checklist is section 11 of this file; screen-by-screen details are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
 **Overall project status (2026-10-31):** the last change set verified on the developer machine is commit `5590aa3` (run history). The deployment-readiness commit `1c08d1d` (sandbox, CSRF cookie, V4, CI/CD) has not been built by Maven yet; its first build is the pull-request CI run.
 
 | Area | Status | Pending |
@@ -233,16 +235,18 @@ Use GitHub Actions in the existing private repository. Begin with CI only; deplo
 
 ## 8. Completion Checklist
 
-- [ ] Database and schema decision recorded; Azure SQL free-offer eligibility checked.
-- [ ] Migrations, backup/export, retention, and account deletion policy implemented.
-- [ ] Password and OTP secrets are never stored/logged in plaintext.
-- [ ] Email OTP delivery works in staging; email quota and sender domain are verified.
-- [ ] Authentication/session security and account ownership have automated tests.
-- [ ] Docker image includes JDK/compiler/JDI and does not run as root.
-- [ ] User-code execution isolation is approved before public execution is enabled.
-- [ ] GitHub Actions CI passes on a clean runner; secrets use OIDC/secret store.
-- [ ] Staging health, authentication, persistence, and trace smoke tests pass.
-- [ ] Cost alerts, rollback, backups, and deployment instructions are verified.
+*Status as of 2026-10-31; ticked items are done, notes say what is left.*
+
+- [ ] Database and schema decision recorded; Azure SQL free-offer eligibility checked. — Decision recorded (Azure SQL); eligibility is checked when creating the database (runbook step 2).
+- [ ] Migrations, backup/export, retention, and account deletion policy implemented. — Migrations V1–V4 done and verified on H2; backup/export, retention and account deletion not done.
+- [x] Password and OTP secrets are never stored/logged in plaintext. — BCrypt hashes for passwords and OTPs; secrets only in environment/secret store.
+- [ ] Email OTP delivery works in staging; email quota and sender domain are verified. — Brevo setup is runbook step 3.
+- [ ] Authentication/session security and account ownership have automated tests. — Integration test covers anonymous rejection and per-user run history isolation; signup/OTP/reset flows not yet tested automatically.
+- [ ] Docker image includes JDK/compiler/JDI and does not run as root. — Dockerfile does both; CI checks it on the first pull-request run.
+- [ ] User-code execution isolation is approved before public execution is enabled. — Security Manager sandbox in place; private beta until the Stage 7 review.
+- [ ] GitHub Actions CI passes on a clean runner; secrets use OIDC/secret store. — Workflow written with OIDC; first run pending.
+- [ ] Staging health, authentication, persistence, and trace smoke tests pass. — Runbook step 8.
+- [ ] Cost alerts, rollback, backups, and deployment instructions are verified. — Instructions written (`docs/DEPLOYMENT.md`); alerts/rollback are runbook step 9.
 
 ## 9. Current Pricing and Reference Links
 
@@ -257,6 +261,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
 
 ## 10. Change History
+
+### 2026-10-31 — Handover document and deployment runbook
+
+**Technical analysis:** Added `docs/HANDOVER.md` (project summary, pipeline, timeline of all commits, decisions and reasons, local run, status, next steps, limitations, how to resume) and section 11 of this plan (deployment runbook with a status per step and every value to record). Updated the section 8 checklist to the real state and linked the handover from this plan, `README.md` and `CLAUDE.md`.
+
+**Files changed:** `docs/HANDOVER.md` (new), `plan.markdown`, `README.md`, `CLAUDE.md`.
+
+**Verification:** Documentation only.
 
 ### 2026-10-31 — Repository made deployable
 
@@ -365,3 +377,36 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - `plan.markdown` — new root-level phase-two project plan; no application code or infrastructure was changed.
 
 **Verification:** Inspected the monorepo root, backend Maven dependencies/configuration, and current Git ignore rules. Cloud quotas/pricing references are linked in the plan and should be reconfirmed before deployment.
+
+## 11. Deployment Runbook (step-by-step checklist)
+
+Follow in order; tick each box and fill in the values as you go. Screen-by-screen instructions for each step are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Free-tier settings are fixed by section 0 of this plan.
+
+**Values to record (never put passwords/keys in this file — store them in a password manager):**
+
+| Name | Where it comes from | Value |
+|---|---|---|
+| Image | step 0, workflow log | `ghcr.io/kaushiksangmuli/java-visualizer/backend:<sha>` |
+| Resource group / region | step 1 | `rg-java-visualizer` / ... |
+| SQL server / database | step 2 | `....database.windows.net` / `javavisualizer` |
+| `DB_URL` | step 2 | `jdbc:sqlserver://<server>.database.windows.net:1433;database=javavisualizer;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;` |
+| Brevo sender | step 3 | ... |
+| `FRONTEND_URL` | step 5 | `https://....azurestaticapps.net` |
+| Container App name / `BACKEND_URL` | step 6 | ... / `https://....azurecontainerapps.io` |
+| Managed identity client ID | step 7 | ... |
+
+**Steps**
+
+- [ ] **0. Merge and publish the image.** Pull request `feature/function-box-implementation` → `main`; CI must pass (backend tests, frontend build, Docker build + image check). Merge. The push publishes `ghcr.io/kaushiksangmuli/java-visualizer/backend:<sha>` (deploy jobs skip — expected). Set the GHCR package visibility to Public (or add registry credentials later).
+- [ ] **1. Resource group.** `rg-java-visualizer` in one region (e.g. Central India); use it for everything.
+- [ ] **2. Azure SQL Database (free offer).** Apply the free offer; database `javavisualizer`; new server with SQL authentication; free-limit behaviour **Auto-pause until next month**; networking: allow Azure services. Tables are created by Flyway on first backend start (V1–V4).
+- [ ] **3. Brevo.** Free account, verify the sender address, create an API key.
+- [ ] **4. JWT secret.** Generate 32+ random characters (PowerShell command in `DEPLOYMENT.md`).
+- [ ] **5. Static Web App (Free).** Deployment source **Other**; record `FRONTEND_URL`; copy the deployment token.
+- [ ] **6. Container App (Consumption).** Image from step 0, ingress external on port 8080, 1 vCPU / 2 Gi, min 0 / max 1 replicas; secrets `db-password`, `jwt-secret`, `brevo-api-key`; env vars `SPRING_PROFILES_ACTIVE=azure`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `VISUALIZER_JWT_SECRET`, `VISUALIZER_BREVO_API_KEY`, `VISUALIZER_EMAIL_SENDER`, `CORS_ALLOWED_ORIGINS=<FRONTEND_URL>`; probes `GET /health`. Record `BACKEND_URL`; check `BACKEND_URL/health` → `{"status":"ok"}`.
+- [ ] **7. GitHub → Azure access (OIDC).** User-assigned managed identity with a federated credential for repo `KaushikSangmuli/java-visualizer`, environment `production`; Contributor on the resource group. GitHub environment `production`. Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINERAPP_NAME`, `BACKEND_URL`; secret `AZURE_STATIC_WEB_APPS_API_TOKEN`.
+- [ ] **8. First deploy and smoke test.** Actions → CI/CD → Run workflow on `main`. Then in Chrome/Edge: open `FRONTEND_URL`, sign up, receive the emailed code, verify, sign in, run "Nested loops with a function call", check `GET /api/runs` count increases.
+- [ ] **9. Guardrails.** Budget with alerts at 50 % / 100 %; check the SQL free allowance after a week; rehearse rollback (activate previous revision or redeploy the previous image tag).
+- [ ] **10. Afterwards.** Review the 4 Maven warnings; decide on deleting commented-out frontend code; custom domain (fixes Safari/iOS login); Stage 7 production-readiness review before inviting the public.
+
+**After the first deploy, every merge to `main` redeploys automatically** (tests → image → Container App → health check → frontend). To require approval first, add a required reviewer to the GitHub environment `production`.
