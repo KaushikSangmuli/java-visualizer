@@ -1,3 +1,5 @@
+import { innermostLoopAt, loopChain, loopKindLabel, loopVariableHistory } from '../loopHistory.js';
+
 const referenceColors = ['#4d88e8', '#16a085', '#d0783e', '#9866cf', '#d15478', '#1688a8', '#748d25', '#c15d45'];
 
 function colorForId(id) {
@@ -80,18 +82,52 @@ function FunctionCalls({ calls = [] }) {
   </section>;
 }
 
+// One running loop inside a frame: its own variables, the calls made inside it, and any nested loop.
+// The ending condition sits in the top-right corner: source text small, current values larger.
+function LoopBox({ loop, variables, callsByLoop, renderLoopVariable }) {
+  const own = (loop.variables ?? []).map((name) => variables.find((variable) => variable.name === name)).filter(Boolean);
+  const calls = callsByLoop.get(loop) ?? [];
+  const result = loop.conditionResult;
+  return <section className="loop-box" aria-label={`${loopKindLabel(loop.kind)} at line ${loop.startLine}`}>
+    <header className="loop-box-heading">
+      <span className="loop-box-title"><b>{loopKindLabel(loop.kind)}</b> · line {loop.startLine} · {loop.iteration > 0 ? `iteration ${loop.iteration}` : 'starting'}</span>
+      <span className="loop-condition" title="Loop ending condition">
+        <small>{loop.condition}</small>
+        {loop.conditionValues && <strong>{loop.conditionValues}</strong>}
+        {result !== null && result !== undefined && <i className={result ? 'condition-true' : 'condition-false'} aria-label={result ? 'condition true, loop continues' : 'condition false, loop ends'}>{result ? '✓' : '✗'}</i>}
+      </span>
+    </header>
+    {own.length > 0 && <div className="loop-variable-grid">{own.map((variable) => renderLoopVariable(variable, loop))}</div>}
+    <FunctionCalls calls={calls} />
+    {(loop.loops ?? []).map((nested) => <LoopBox key={`${nested.startLine}-${nested.activationStep}`} loop={nested} variables={variables} callsByLoop={callsByLoop} renderLoopVariable={renderLoopVariable} />)}
+  </section>;
+}
+
 export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalysis = true }) {
   if (frames.length === 0) return <div className="empty-state">Run a program to inspect its call stack.</div>;
   return (
     <div className="frame-list">
       {frames.map((frame, index) => {
-        // Variables are always shown in the same order: parameters, local variables, then anything else (e.g. `this`).
+        // Order inside a frame: parameters, calls made outside loops, local variables, running loops, then anything else (e.g. `this`).
+        // Variables declared by a running loop and calls made inside it are shown in that loop's box instead.
         const variables = frame.variables ?? [];
+        const loops = frame.loops ?? [];
+        const loopVariableNames = new Set(loopChain(loops).flatMap((loop) => loop.variables ?? []));
         const parameters = variables.filter((variable) => variable.kind === 'parameter');
-        const locals = variables.filter((variable) => variable.kind === 'local');
+        const locals = variables.filter((variable) => variable.kind === 'local' && !loopVariableNames.has(variable.name));
         const others = variables.filter((variable) => variable.kind !== 'parameter' && variable.kind !== 'local');
+        const callsByLoop = new Map();
+        const frameCalls = [];
+        for (const call of frame.calls ?? []) {
+          const owner = innermostLoopAt(loops, call.line);
+          if (owner) callsByLoop.set(owner, [...(callsByLoop.get(owner) ?? []), call]);
+          else frameCalls.push(call);
+        }
+        const depth = frames.length - 1 - index;
         const callSite = frames[index + 1]?.line;
         const renderVariable = (variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} heap={fullAnalysis ? undefined : heap} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />;
+        const renderLoopVariable = (variable, loop) => <VariableBox key={`${variable.name}-loop`} variable={variable} heap={fullAnalysis ? undefined : heap} onReference={onReference} onFocus={() => onFocus({ kind: 'loop-variable', name: variable.name, variable, depth, startLine: loop.startLine, activationStep: loop.activationStep, loopKind: loop.kind })} />;
+        const loopBoxes = loops.map((loop) => <LoopBox key={`${loop.startLine}-${loop.activationStep}`} loop={loop} variables={variables} callsByLoop={callsByLoop} renderLoopVariable={renderLoopVariable} />);
         if (!fullAnalysis) {
           const normalGroup = (label, items) => items.length > 0 && <div className="normal-variable-group">
             <span className="normal-group-label">{label}</span>
@@ -100,8 +136,9 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
           return <article className="frame-card normal-frame" key={`${frame.className}-${frame.method}-${index}`}>
             <div className="normal-frame-heading"><span className="normal-frame-name">{frame.method}</span><span className="normal-frame-return">returns {displayType(frame.returnType)}</span></div>
             {normalGroup('Parameters', parameters)}
-            <FunctionCalls calls={frame.calls} />
+            <FunctionCalls calls={frameCalls} />
             {normalGroup('Local variables', locals)}
+            {loopBoxes}
             {normalGroup('Other', others)}
             {variables.length === 0 && <div className="empty-variables">No visible variables at this line.</div>}
           </article>;
@@ -113,8 +150,9 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
           </div>
           <div className="frame-meta"><span>{displayType(frame.className)} · line {frame.line}</span>{callSite != null && <span className="call-site">called from line {callSite}</span>}</div>
           {parameters.length > 0 && <section className="variable-group parameter-group"><h5>Parameters</h5><div className="variable-grid">{parameters.map(renderVariable)}</div></section>}
-          <FunctionCalls calls={frame.calls} />
+          <FunctionCalls calls={frameCalls} />
           {locals.length > 0 && <section className="variable-group local-group"><h5>Local variables</h5><div className="variable-grid">{locals.map(renderVariable)}</div></section>}
+          {loopBoxes}
           {others.length > 0 && <section className="variable-group other-group"><h5>Other</h5><div className="variable-grid">{others.map(renderVariable)}</div></section>}
           {variables.length === 0 && <div className="empty-variables">No visible variables at this line.</div>}
         </article>;
@@ -187,15 +225,27 @@ export function HeapPanel({ heap, onReference, onFocus, selectedId, onSelect }) 
   );
 }
 
-export function FocusedPanel({ focus, heap, onReference, onClear }) {
+export function FocusedPanel({ focus, heap, onReference, onClear, trace = [], stepIndex = 0 }) {
+  const loopVariable = focus?.kind === 'loop-variable';
+  // Loop variables show one value per iteration of the loop run, recomputed as the user steps.
+  const history = loopVariable ? loopVariableHistory(trace, stepIndex, focus) : [];
   const referenceId = focus?.kind === 'variable' ? focus.variable.referenceId : focus?.kind === 'static' ? focus.variable?.referenceId : null;
   const object = focus?.kind === 'object' ? focus.object : heap?.objects?.find((item) => item.id === referenceId);
   const focusedValue = focus?.kind === 'variable' || focus?.kind === 'static' ? focus.variable : null;
   return (
     <article className="focused-box panel">
-      <div className="focused-heading"><div><span className="inspect-kicker">DETAILS</span><h3>Focused box</h3></div><div className="focused-actions"><span className="count-chip">{focus ? focus.kind : 'empty'}</span>{focus && <button type="button" className="focused-clear" onClick={onClear} aria-label="Remove focused item">Clear</button>}</div></div>
+      <div className="focused-heading"><div><span className="inspect-kicker">DETAILS</span><h3>Focused box</h3></div><div className="focused-actions"><span className="count-chip">{focus ? focus.kind.replace('-', ' ') : 'empty'}</span>{focus && <button type="button" className="focused-clear" onClick={onClear} aria-label="Remove focused item">Clear</button>}</div></div>
       {!focus ? <p className="focused-empty">Double-click a variable or heap object to inspect it here.</p> : (
         <div className="focused-content" onDoubleClick={onClear} title="Double-click a focused value to remove it">
+          {loopVariable && <div className="loop-history">
+            <div className="loop-history-title"><strong>{focus.name}</strong><small>{displayType(focus.variable?.type)} · {loopKindLabel(focus.loopKind)} at line {focus.startLine}</small></div>
+            {history.length === 0 ? <span className="object-meta">No completed iteration yet.</span> : <ol className="loop-history-values" aria-label={`Values of ${focus.name} per iteration`}>
+              {history.map(({ iteration, variable }, position) => <li key={iteration} className={position === history.length - 1 ? 'current' : ''}>
+                <small>iter {iteration}</small>
+                <Value value={{ ...variable, type: displayType(variable.type) }} onReference={onReference} />
+              </li>)}
+            </ol>}
+          </div>}
           {focusedValue && <div className="focused-variable"><div><strong>{focus.name}</strong><small>{displayType(focus.type ?? focusedValue.type)}</small></div><Value value={{ ...focusedValue, type: displayType(focusedValue.type) }} onReference={onReference} /></div>}
           {focus.kind === 'object' && <div className="focused-object-title"><strong>{displayType(object.className)}</strong><span>{object.kind} · #{object.id}</span></div>}
           {object && <div className="focused-object-details">

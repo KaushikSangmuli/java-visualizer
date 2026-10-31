@@ -324,9 +324,11 @@ export default function App() {
               )}
             </article>
 
+            {/* Loop status panel hidden: each running loop now has its own box (iteration, condition) inside its stack frame.
             <LoopStatus loop={activeLoop} />
+            */}
 
-            {fullAnalysis && <FocusedPanel focus={focusedItem} heap={heap} onClear={() => setFocusedItem(null)} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />}
+            {(fullAnalysis || focusedItem) && <FocusedPanel focus={focusedItem} heap={heap} trace={trace} stepIndex={currentStepIndex} onClear={() => setFocusedItem(null)} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />}
 
 
             {response?.truncated && <div className="truncated-banner">Trace paused at a safety limit. The steps captured so far are available above.</div>}

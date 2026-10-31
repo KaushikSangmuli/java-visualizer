@@ -82,10 +82,10 @@ final class CallSiteAnalyzer {
                 call.toString(), target(call)));
     }
 
-    private record Caller(String method, String className) {}
+    record Caller(String method, String className) {}
 
     /** The first enclosing method or constructor; calls inside lambdas and initializers are not attributed. */
-    private static Caller caller(Node call) {
+    static Caller caller(Node call) {
         String method = null;
         Optional<Node> current = call.getParentNode();
         while (current.isPresent()) {

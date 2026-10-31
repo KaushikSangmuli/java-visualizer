@@ -32,6 +32,7 @@ public class TraceEnricher {
 
     public List<TraceStep> enrich(List<TraceStep> raw, CodeMetadata metadata, boolean truncated, String source) {
         FunctionCallTracker calls = new FunctionCallTracker(CallSiteAnalyzer.analyze(source));
+        LoopTracker loops = new LoopTracker(LoopSiteAnalyzer.analyze(source), raw);
         List<TraceStep> result = new ArrayList<>(raw.size() + (raw.isEmpty() ? 0 : 1));
         Map<String, VariableSnapshot> previousVariables = Map.of();
         Map<String, HeapObjectSnapshot> previousObjects = Map.of();
@@ -40,7 +41,7 @@ public class TraceEnricher {
         int previousLoopLine = -1;
 
         for (int index = 0; index < raw.size(); index++) {
-            TraceStep step = calls.apply(raw.get(index));
+            TraceStep step = loops.apply(calls.apply(raw.get(index)), index);
             String lineType = lineType(step.line(), step.event(), metadata);
             if (metadata.loops().stream().anyMatch(loop -> loop.startLine() == step.line())) {
                 if (previousLoopLine == step.line()) loopPasses++;

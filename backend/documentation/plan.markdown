@@ -14,6 +14,7 @@ The backend accepts Java source and returns bounded execution traces through the
 - **Stage 5: Implemented; build/runtime verification pending.** JavaParser supplies method/loop/branch metadata and the AST blocklist reports restricted APIs with locations.
 - **Stage 6: Implemented; build/runtime verification pending.** Trace events contain line classifications, variable/heap deltas (including changed object fields and array indices with before/after values), branch/loop explanations, and a final `end` event.
 - **Stage 7: Implemented; container verification pending.** Per-client fixed-window limits, concurrent-run admission, configurable CORS, a non-root JDK container image, and restrictive runtime instructions are present.
+- **Loop boxes: Implemented (2026-10-31); local Maven/browser verification pending.** Frames list running loops (nested) with iteration, condition values/verdict and declared variables.
 - **Function call boxes: Implemented (2026-10-31); local Maven/browser verification pending.** Caller frames list calls to user methods/constructors with argument values, waiting/returned state and source text; rows persist until the caller leaves the line. Verified against real JDI traces outside Spring.
 - **Stage 8: Tests and documentation added; execution pending.** JUnit tests cover source/main handling, AST inspection, trace enrichment, admission controls, and Spring MVC/JDI integration. Maven is not available in the current coding shell, so these tests have not yet run.
 

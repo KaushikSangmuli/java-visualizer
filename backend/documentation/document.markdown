@@ -376,3 +376,19 @@ The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it h
 **Files and methods changed:** `src/main/java/com/example/demo/service/TraceEnricher.java` — `variables`.
 
 **Verification:** Real FunMulti trace now reports 2 added variables on the `fun_add` call, 2 out-of-scope on return, and `result` changed afterwards. The function-call tests still pass under the stand-in runner; run `mvn clean verify` locally.
+
+### 2026-10-31 — Loop boxes in stack frames
+
+**Technical analysis:** Each frame now carries a `loops` list describing the loops it is running, nested inner-inside-outer. `LoopSiteAnalyzer` uses JavaParser to find `for`, for-each, `while` and `do-while` loops with their condition, header/condition and body lines, and the variables each loop declares (header plus body, excluding variables owned by a nested loop, lambda or class). `LoopTracker` walks the trace per frame depth: an iteration starts when the frame's line enters the body from outside it, a run of a loop ends when the frame leaves its lines (a later re-entry, e.g. an inner loop on the next outer iteration, is a new run with a new `activationStep`), and the condition is reported with current values (`i < times` → `2 < 4`, `arr.length` resolved from the heap) plus a true/false verdict on steps where the condition is being checked, decided by where the frame goes next. For-each loops report `n of total` for arrays and collections exposing a `size` field. Caller frames keep their loop state while a callee runs. Approximations: a loop whose body is on the header line counts iterations by header visits; conditions that call methods (`list.size()`) are shown with only their variables replaced.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/LoopSnapshot.java` — new loop record (kind, lines, condition, values, result, iteration, activationStep, variables, nested loops).
+- `src/main/java/com/example/demo/model/FrameSnapshot.java` — `loops` component with compatibility constructors.
+- `src/main/java/com/example/demo/service/LoopSiteAnalyzer.java` — new; `analyze`, `add`, `bodyLines`, `owner`.
+- `src/main/java/com/example/demo/service/LoopTracker.java` — new; `apply`, `advance`, `conditionResult`, `snapshot`, `withValues`, `iterableSize`.
+- `src/main/java/com/example/demo/service/CallSiteAnalyzer.java` — `caller` shared with the loop analyzer.
+- `src/main/java/com/example/demo/service/TraceEnricher.java` — runs `LoopTracker` after `FunctionCallTracker`.
+- `src/test/java/com/example/demo/service/LoopTrackerTest.java` — loop kinds/conditions/variables, nested iterations, condition verdicts, new inner runs, loop removal, caller loops during a call.
+
+**Verification:** Compiled with JDK 21 against a local JavaParser 3.17 jar and run with the real `Tracer` on a program covering nested `for` loops with a call in the inner loop, `while`, `do-while`, for-each over an array and an `ArrayList`; iterations, condition values/verdicts, nesting and ownership matched expectations. The three new tests plus the seven function-call tests passed under a minimal JUnit stand-in. Run `mvn clean verify` locally.

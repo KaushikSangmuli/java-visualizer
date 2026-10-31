@@ -24,6 +24,30 @@ export const examples = [
 }`,
   },
   {
+    name: 'Nested loops with a function call',
+    className: 'NestedLoops',
+    code: `public class NestedLoops {
+    static int multiply(int a, int b) {
+        return a * b;
+    }
+
+    public static void main(String[] args) {
+        int total = 0;
+        for (int row = 1; row <= 3; row++) {
+            for (int col = 1; col <= 2; col++) {
+                int cell = multiply(row, col);
+                total = total + cell;
+            }
+        }
+        int countdown = 3;
+        while (countdown > 0) {
+            countdown--;
+        }
+        System.out.println("total = " + total);
+    }
+}`,
+  },
+  {
     name: 'Heap & static fields',
     className: 'MemoryDemo',
     code: `import java.util.ArrayList;
