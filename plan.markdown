@@ -2,7 +2,21 @@
 
 **Document purpose:** Product and technical plan for adding accounts, persistence, container packaging, CI/CD, and a first cloud deployment to the existing Java Code Memory Visualizer repository.
 
-**Status:** Phase-two implementation is underway. Email/password authentication now uses stateless JWT cookies, login-first UI, and a local-only OTP bypass. The frontend production build passed to a permitted temporary directory; backend/database/browser verification remains pending because JDK and Maven are unavailable in the coding shell. Cloud accounts/resources and provider credentials remain user-configured.
+**Status:** Phase-two implementation is underway (see the status table below; visualization features added 2026-10-31 are on `feature/function-box-implementation`). Email/password authentication now uses stateless JWT cookies, login-first UI, and a local-only OTP bypass. The frontend production build passed to a permitted temporary directory; backend/database/browser verification remains pending because JDK and Maven are unavailable in the coding shell. Cloud accounts/resources and provider credentials remain user-configured.
+
+**Overall project status (2026-10-31):**
+
+| Area | Status | Pending |
+|---|---|---|
+| Visualizer core (compile, JDI trace, stack, heap, statics, metadata, state changes) | Done; user-verified with samples | Full sample matrix in browser |
+| Function-call boxes (waiting/returned rows in caller frames) | Done on `feature/function-box-implementation` | `mvn clean verify`, browser check, merge |
+| Loop boxes (iteration, condition corner, nested loops, per-iteration history) | Done on `feature/function-box-implementation` | `mvn clean verify`, browser check, merge |
+| Stack-first trace layout, compact Normal mode | Done on `feature/function-box-implementation` | `pnpm run build`, browser check |
+| Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Code present | Build, migrations, browser auth flow, Brevo in staging |
+| Stage 3 Docker / local compose | Dockerfile only | Compose, image checks, sample traces in container |
+| Stage 4–6 GitHub Actions CI/CD and Azure | Not started | All |
+| Stage 7 production readiness / sandbox gate | Not started | All |
+| Future: DSA sheet, company lists, LeetCode picker | Not started | Product decisions |
 
 **Repository root:** `java-visualizer/` (the directory containing `backend/`, `frontend/`, and this file).
 
@@ -238,6 +252,30 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
 
 ## 10. Change History
+
+### 2026-10-31 — Loop boxes inside stack frames
+
+**Technical analysis:** Running loops are now shown as boxes inside their frame. The backend (`LoopSiteAnalyzer`, `LoopTracker`) finds `for`, for-each, `while` and `do-while` loops, their condition and declared variables, and attaches each running loop to its frame with the iteration, the condition filled with current values, a true/false verdict when the condition is checked, and nested loops. The frontend draws the loop box with the condition in the top-right corner (source small, values larger), the loop's own variables, calls made inside it and nested loop boxes; double-clicking a loop variable shows its value per iteration in the Focused box. The Loop status panel is commented out.
+
+**Files changed:** backend `model/LoopSnapshot.java`, `model/FrameSnapshot.java`, `service/LoopSiteAnalyzer.java`, `service/LoopTracker.java`, `service/CallSiteAnalyzer.java`, `service/TraceEnricher.java`, `LoopTrackerTest.java`; frontend `loopHistory.js`, `components/TracePanels.jsx`, `App.jsx`, `styles.css`, `examples.js`; backend/frontend documentation and `README.md`.
+
+**Verification:** Real tracer runs (nested for with a call, while, do-while, for-each over array and ArrayList) and headless-browser renders against real traces. `mvn clean verify` and `pnpm run build` pending locally.
+
+### 2026-10-31 — Stack-first layout and stable variable-change keys
+
+**Technical analysis:** Call stack and heap moved to the top of the right column with step controls below; the Execution trace header and step context are commented out; state changes sit under the heap (or stack in Normal mode); frames order parameters, function calls, locals, then other; Normal-mode variable cards are compact and frame headings bold. Variable-change keys now number frames from `main`, so a call no longer reports every outer variable as changed.
+
+**Files changed:** frontend `App.jsx`, `components/TracePanels.jsx`, `styles.css`; backend `service/TraceEnricher.java`; documentation.
+
+**Verification:** Headless-browser screenshots with a real FunMulti trace; real tracer output for the change keys.
+
+### 2026-10-31 — Function-call boxes completed
+
+**Technical analysis:** Finished the call box started by Codex on 2026-10-25. Caller frames list calls to user-written methods and constructors on their current line, as `result = fun_add(0, 4)` while waiting and `result = 4 <= fun_add(0, 4)` after return, with the source form on hover. Every waiting caller keeps its row; returned rows stay until the caller leaves the line; nested and repeated calls on one line are listed in evaluation order; library calls are ignored.
+
+**Files changed:** backend `model/FunctionCallSnapshot.java`, `service/CallSiteAnalyzer.java`, `service/FunctionCallTracker.java`, `service/TraceEnricher.java`, `FunctionCallTrackerTest.java`; frontend `components/TracePanels.jsx`, `styles.css`; documentation. Work is on branch `feature/function-box-implementation`.
+
+**Verification:** Real tracer runs covering recursion, nested calls, constructors, void methods and one-line loops; tests passed under a stand-in JUnit runner. `mvn clean verify` pending locally.
 
 ### 2026-10-18 — Set login-first UI and JWT authentication direction
 

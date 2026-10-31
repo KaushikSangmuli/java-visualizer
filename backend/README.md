@@ -48,7 +48,9 @@ The response uses camelCase and returns a handled outcome with HTTP 200. Status 
 {"status":"ok","message":null,"errors":null,"trace":[{"step":0,"line":1,"event":"call","stdout":"","frames":[{"method":"main","className":"Main","returnType":"void","line":1,"variables":[{"name":"args","type":"java.lang.String[]","value":"[Ljava.lang.String;@<id>","kind":"parameter"}]}],"explanation":"Entered method main.","returnValue":null}],"truncated":false,"truncatedReason":null,"exception":null,"stdout":"Hello\n"}
 ```
 
-Submit a sample while the server is running:
+Each frame also carries `calls` (calls the frame is waiting on or just got a result from, with values and source form) and `loops` (running loops with iteration, condition values, true/false verdict when checked, loop-declared variables and nested loops). See `documentation/document.markdown` for field details.
+
+`/api/visualize` requires a signed-in JWT cookie and a CSRF header since phase two; use the frontend, or sign in through the auth endpoints first. Submit a sample while the server is running:
 
 ```powershell
 curl.exe -X POST http://localhost:8080/api/visualize -H "Content-Type: application/json" --data-binary "@samples/largest.json"

@@ -64,6 +64,12 @@ The phase-two authentication implementation is separate from backend Stages 1–
 
 - Add JUnit 5 coverage for parsing, source handling, metadata, trace enrichment, and integration scenarios; complete final documentation.
 
+## Stage 9 — Function call and loop visualization (2026-10-31)
+
+- **Done:** `calls` on frames (waiting/returned rows, values plus source form, nested and repeated calls, constructors, every waiting caller); `loops` on frames (for, for-each, while, do-while; iteration; condition with values and true/false verdict; loop-declared variables; nested loops; new run per re-entry); stable frame keys for variable changes; `FunctionCallTrackerTest` and `LoopTrackerTest`.
+- **Pending:** run `mvn clean verify` locally; browser check with the Nested function calls and Nested loops examples; merge `feature/function-box-implementation` into `main` after review.
+- **Known limits:** one-line loop bodies count iterations by header visits; conditions calling methods (`list.size()`) only substitute variables; frames beyond the 50 displayed frames may lose call/loop rows.
+
 ## Response direction
 
 The API continues to accept Java source. Trace events include stack frames, visible frame variables, method explanations/return values, and a bounded `heap` snapshot containing `objects`, `staticFields`, and heap truncation metadata. Object references carry `referenceId` values that link frame/static/field/array values to heap entries. Successful responses add AST-derived `metadata`; events include `lineType`, `variableChanges`, and `heapChanges`, and conclude with `event: end`. Blocked code has `blockedApis` entries. Rate-limit and concurrency rejections use `status: busy`.

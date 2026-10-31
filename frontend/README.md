@@ -25,6 +25,7 @@ To build static production assets, run `npm run build`. The result is written to
 2. Select **Run & visualize** to call `POST /api/visualize`.
 3. Use previous, play/pause, next, or the timeline slider to select a trace event.
 4. Inspect the highlighted source line, current call stack, variables, heap objects, static fields, state changes, parser metadata, and program output. Turn **Full analysis** off for the simplified stack view.
+5. Inside each function, waiting/returned **function call** rows show what the function is calling (hover for the source form), and each running **loop** has its own box with the iteration, its variables, the ending condition with live values in the top-right corner, calls made inside it and nested loops. Double-click a loop variable to see its value per iteration in the Focused box.
 
 The initial examples include recursion, arrays, a linked cycle, collection internals, and static fields. The reference project is retained in `../reference_for_frontend`; the UI borrows its educational layout concept, not its C++ execution service or stored trace format.
 
