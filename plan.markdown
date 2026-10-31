@@ -2,7 +2,7 @@
 
 **Document purpose:** Product and technical plan for adding accounts, persistence, container packaging, CI/CD, and a first cloud deployment to the existing Java Code Memory Visualizer repository.
 
-**Status:** Phase-two implementation is underway (see the status table below; visualization features added 2026-10-31 are on `feature/function-box-implementation`). Email/password authentication now uses stateless JWT cookies, login-first UI, and a local-only OTP bypass. The frontend production build passed to a permitted temporary directory; backend/database/browser verification remains pending because JDK and Maven are unavailable in the coding shell. Cloud accounts/resources and provider credentials remain user-configured.
+**Status:** Phase-two implementation is underway (see the status table below; visualization features added 2026-10-31 are on `feature/function-box-implementation`). Email/password authentication now uses stateless JWT cookies, login-first UI, and a local-only OTP bypass. Locally, `mvn clean verify` passes and the app works end to end with H2 (owner, 2026-10-31). The repository is deployment-ready (Docker image, CI/CD workflow, `docs/DEPLOYMENT.md`); Azure resources and provider credentials are not created yet.
 
 **Overall project status (2026-10-31):** the last change set verified on the developer machine is commit `5590aa3` (run history). The deployment-readiness commit `1c08d1d` (sandbox, CSRF cookie, V4, CI/CD) has not been built by Maven yet; its first build is the pull-request CI run.
 

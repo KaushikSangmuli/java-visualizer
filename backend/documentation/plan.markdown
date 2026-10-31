@@ -79,7 +79,7 @@ The API continues to accept Java source. Trace events include stack frames, visi
 
 ### 2026-10-17 implementation progress
 
-Stages 5–8 have implementation changes in place; no future product scope has been implemented. Local Maven build, JUnit execution, Docker build, and end-to-end sample runs remain pending because the current coding shell has no Maven or Docker executable. The host JDK 21 and `jdk.jdi` module are present.
+Stages 5–8 have implementation changes in place; no future product scope has been implemented. *(Update 2026-10-31: the Maven build and JUnit tests now pass on the owner's machine; the Docker build runs first in GitHub Actions; see Current status.)*
 
 
 ## Future product scope — after the planned backend and frontend work

@@ -4,7 +4,7 @@ The frontend is an independent React/Vite application that accepts Java source a
 
 ## Current status
 
-- **Phase 2 account UI: Login-first flow implemented; backend integration pending.** New visitors see login first with a signup link; successful authentication reveals the visualizer. Signup, verification/resend, logout, and password-reset screens are wired to the auth API. Local signup/reset shows the development OTP supplied by the backend. The frontend production bundle passes when written to the permitted temporary workspace.
+- **Phase 2 account UI: Login-first flow working locally (owner, 2026-10-31); hosted cross-site login pending first deploy.** New visitors see login first with a signup link; successful authentication reveals the visualizer. Signup, verification/resend, logout, and password-reset screens are wired to the auth API. Local signup/reset shows the development OTP supplied by the backend. The frontend production bundle passes when written to the permitted temporary workspace.
 
 - **Stage 1 — Frontend foundation: Implemented and build-verified.** React/Vite project, app bootstrap, dependency lockfile, and development configuration are present. `pnpm install` and `pnpm run build` succeeded.
 - **Stage 2 — Source editor and examples: Implemented.** Editable line-numbered source editor and bundled Java examples are present.
