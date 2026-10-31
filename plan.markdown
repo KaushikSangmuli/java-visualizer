@@ -11,7 +11,7 @@
 | Visualizer core (compile, JDI trace, stack, heap, statics, metadata, state changes) | Done; user-verified with samples | Full sample matrix in browser |
 | Function-call boxes (waiting/returned rows in caller frames) | Done on `feature/function-box-implementation` | `mvn clean verify`, browser check, merge |
 | Loop boxes (iteration, condition corner, nested loops, per-iteration history) | Done on `feature/function-box-implementation` | `mvn clean verify`, browser check, merge |
-| Stack-first trace layout, compact Normal mode | Done on `feature/function-box-implementation` | `pnpm run build`, browser check |
+| Stack-first trace layout, compact variable boxes, collapsible frames, fixed step controls, heap objects open independently | Done on `feature/function-box-implementation` | `pnpm run build`, browser check |
 | Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Code present | Build, migrations, browser auth flow, Brevo in staging |
 | Stage 3 Docker / local compose | Dockerfile only | Compose, image checks, sample traces in container |
 | Stage 4–6 GitHub Actions CI/CD and Azure | Not started | All |
@@ -252,6 +252,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
 
 ## 10. Change History
+
+### 2026-10-31 — Compact variables, collapsible frames, independent heap objects, fixed controls
+
+**Technical analysis:** Array elements show a reference as a colour-coded id (`#463`) instead of repeating the type at every index; variable boxes are smaller in both modes; each function frame can be collapsed and expanded (expanded by default, remembered while stepping); heap objects open and close independently (bug: opening a second object closed both); the stack/heap area has a fixed height and state changes moved so the step controls no longer move between steps.
+
+**Files changed:** frontend `components/TracePanels.jsx`, `App.jsx`, `styles.css`; `frontend/documentation/document.markdown`, `frontend/documentation/plan.markdown`, this file; `CLAUDE.md` (documentation rules for future changes).
+
+**Verification:** Headless Chromium with a real trace (`int[]`, `int[][]`, `String[]`): controls at the same position on all steps in both modes, three heap objects open together, collapsed frame stays collapsed. `pnpm run build` pending locally.
 
 ### 2026-10-31 — Loop boxes inside stack frames
 

@@ -9,7 +9,7 @@ Built as a CDAC final project: a Spring Boot backend traces real Java execution 
 ## Features
 
 - **Real execution, not simulation.** Code is compiled with the JDK compiler and run in a separate debug JVM; every line, call and return is recorded.
-- **Call stack.** One box per active function with parameters, local variables and `this`, newest call on top.
+- **Call stack.** One box per active function with parameters, local variables and `this`, newest call on top; any function box can be collapsed and expanded.
 - **Function call boxes.** A caller shows the call it is waiting on, e.g. `result = fun_add(0, 4)`, and after the return `result = 4 <= fun_add(0, 4)`. Hover to see the call as written (`fun_add(result, number)`). Works for recursion, several calls on one line and constructors (`n = Node@42 <= new Node(5)`).
 - **Loop boxes.** Each running loop (`for`, for-each, `while`, `do-while`) is a box inside its function showing the iteration, its own variables, the calls made inside it and nested loops. The top-right corner shows the ending condition with live values (`i < times` → **`2 < 4`**) and ✓/✗ when it is checked. Double-click a loop variable to see its value in every iteration so far.
 - **Heap & statics.** Objects, arrays, collections, aliases and cycles, linked to the variables that reference them by colour.
@@ -78,7 +78,7 @@ Full details: [backend/README.md](backend/README.md) and [backend/documentation/
 | Area | Status |
 |---|---|
 | Visualizer core (trace, stack, heap, statics, state changes) | Done |
-| Function-call boxes, loop boxes, stack-first layout | Done on `feature/function-box-implementation`; local build/browser check pending |
+| Function-call boxes, loop boxes, stack-first layout, collapsible frames, compact variables | Done on `feature/function-box-implementation`; local build/browser check pending |
 | Accounts (signup, OTP, JWT login, reset) | Implemented; end-to-end verification pending |
 | Docker, GitHub Actions CI/CD, Azure deployment | Planned |
 | DSA sheet / LeetCode problem picker | Future idea |
