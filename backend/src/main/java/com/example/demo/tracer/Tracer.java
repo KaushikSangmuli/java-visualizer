@@ -100,6 +100,11 @@ public class Tracer {
     private static final String[] EXCLUDED_CLASSES = {"java.*", "javax.*", "jdk.*", "sun.*", "com.sun.*"};
     private static final int DEFAULT_MAX_DISPLAYED_FRAMES = 50;
     private static final int MAX_CAPTURE_BYTES = 200_000;
+    /** System properties user programs may read inside the sandbox (no paths, users or secrets). */
+    private static final List<String> SANDBOX_READABLE_PROPERTIES = List.of(
+            "java.version", "java.vendor", "java.specification.version", "line.separator",
+            "file.separator", "path.separator", "file.encoding", "stdout.encoding", "native.encoding",
+            "os.name", "os.arch", "java.vm.name", "user.language", "user.country");
 
     /** What trace() returns. truncatedReason is "max_steps", "timeout" or null. */
     public record TraceResult(List<TraceStep> steps, boolean truncated, String truncatedReason,
@@ -263,9 +268,34 @@ public class Tracer {
             Map<String, Connector.Argument> args = connector.defaultArguments();
             args.get("main").setValue(mainClass);
             args.get("suspend").setValue("true");   // start paused so we can set up requests first
+            // The policy URL has no spaces (they are %20-encoded), so it needs no quoting on Windows either.
+            String policy = writeSandboxPolicy().toUri().toString();
             args.get("options").setValue("-cp \"" + classesDir.toAbsolutePath() + "\""
-                    + " -Xmx128m -Xss1m -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8");
+                    + " -Xmx128m -Xss1m -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"
+                    + " -Djava.security.manager=default -Djava.security.policy==" + policy);
             return connector.launch(args);
+        }
+
+        /**
+         * Sandbox for the user's program. The debuggee JVM runs with the Java Security Manager and
+         * ONLY this policy ("==" ignores the JDK's default policy files), so user code may read its own
+         * compiled classes and a few harmless system properties, and nothing else: no environment
+         * variables (which hold the backend's database password and signing secrets), no other files,
+         * no network, no new processes, no System.exit, no reflection on private members.
+         * The Security Manager is deprecated but fully functional in JDK 21, which the Docker image pins.
+         */
+        private Path writeSandboxPolicy() throws IOException {
+            String classes = classesDir.toAbsolutePath().toString().replace("\\", "\\\\");
+            StringBuilder policy = new StringBuilder("grant {\n")
+                    .append("  permission java.io.FilePermission \"").append(classes).append("\", \"read\";\n")
+                    .append("  permission java.io.FilePermission \"").append(classes).append(java.io.File.separator.replace("\\", "\\\\")).append("-\", \"read\";\n");
+            for (String property : SANDBOX_READABLE_PROPERTIES) {
+                policy.append("  permission java.util.PropertyPermission \"").append(property).append("\", \"read\";\n");
+            }
+            policy.append("};\n");
+            Path file = classesDir.toAbsolutePath().getParent().resolve("sandbox.policy");
+            java.nio.file.Files.writeString(file, policy.toString(), StandardCharsets.UTF_8);
+            return file;
         }
 
         private void shutdown(VirtualMachine vm, Process process, boolean vmEnded) {
@@ -314,7 +344,7 @@ public class Tracer {
 
         /** Captures user method entry while the new frame and its arguments are available. */
         private boolean onMethodEntry(MethodEntryEvent ev) {
-            if (!isTraceThread(ev.thread())) return true;
+            if (!isTraceThread(ev.thread()) || !isUserClass(ev.method().declaringType().name())) return true;
             if (steps.size() >= maxSteps) {
                 truncate("max_steps");
                 return false;
@@ -326,7 +356,7 @@ public class Tracer {
 
         /** Captures the return value directly from JDI without invoking code in the debuggee. */
         private boolean onMethodExit(MethodExitEvent ev, VirtualMachine vm) {
-            if (!isTraceThread(ev.thread())) return true;
+            if (!isTraceThread(ev.thread()) || !isUserClass(ev.method().declaringType().name())) return true;
             if (steps.size() >= maxSteps) {
                 truncate("max_steps");
                 return false;
@@ -604,6 +634,7 @@ public class Tracer {
         }
 
         private static boolean isUserClass(String name) {
+            if (name.contains("$$Lambda")) return false;     // JVM-generated lambda helper, no source lines
             for (String p : EXCLUDED_CLASSES) {
                 if (name.startsWith(p.substring(0, p.length() - 1))) return false;   // "java.*" -> "java."
             }

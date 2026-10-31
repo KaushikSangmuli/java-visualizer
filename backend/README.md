@@ -66,11 +66,11 @@ The `samples/` files are illustrative requests. Run `mvn -q test` for the unit a
 
 ## Limitations and safety
 
-The blocklist is defense in depth only. Arbitrary Java execution is unsafe without proper OS/container sandboxing. The provided container runs the app as a non-root user with a full JDK because the service needs both `javac` and `jdk.jdi`; production deployments must additionally restrict network egress, CPU, memory, process count, and writable paths. CORS and rate limits do not make arbitrary code safe.
+User programs run in a child JVM under a Java Security Manager policy written per run: they may read only their own compiled classes and a few harmless system properties — no environment variables (which hold the database password and signing secrets), no other files, no network, no new processes, no reflection on private members. The AST blocklist (including `getenv` and method references such as `System::exit`) rejects obvious misuse before compiling. The container runs as a non-root user with a full JDK 21 (needed for `javac`, `jdk.jdi` and the Security Manager, which JDK 24 removed). CPU and memory are bounded by the step/time limits and container size but not isolated per user; treat public hosting as a private beta until the production-readiness review.
 
 ## Container build and run
 
-From `backend/`, build the image with `docker build -t java-visualizer-backend .`, then run it with `docker run --rm -p 8080:8080 --read-only --tmpfs /tmp:rw,noexec,nosuid,size=256m --memory=1g --cpus=2 --pids-limit=128 --cap-drop=ALL --security-opt=no-new-privileges java-visualizer-backend`. The debuggee JVM is a child of this process, so resource caps apply to the whole container. Configure network policy at the host/orchestrator so user programs cannot reach untrusted services; do not treat the image alone as a secure sandbox.
+From `backend/`, build the image with `docker build -t java-visualizer-backend .`, then run it with `docker run --rm -p 8080:8080 --read-only --tmpfs /tmp:rw,noexec,nosuid,size=256m --tmpfs /app/data:rw,size=64m,uid=10001 --memory=2g --cpus=2 --pids-limit=256 --cap-drop=ALL --security-opt=no-new-privileges java-visualizer-backend` (local profile, H2 in `/app/data`, OTP `1234`). For Azure see [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md). The debuggee JVM is a child of this process, so resource caps apply to the whole container. Configure network policy at the host/orchestrator so user programs cannot reach untrusted services; do not treat the image alone as a secure sandbox.
 
 ## Tests
 

@@ -35,15 +35,18 @@ public class AuthController {
     private final AuthRateLimiter rateLimiter;
     private final JwtTokenService jwtTokens;
     private final String localOtp;
+    private final com.example.demo.config.ClientAddress clientAddress;
 
     public AuthController(AuthService authService, AuthenticationManager authenticationManager,
                           AuthRateLimiter rateLimiter, JwtTokenService jwtTokens,
+                          com.example.demo.config.ClientAddress clientAddress,
                           @org.springframework.beans.factory.annotation.Value("${visualizer.auth.local-otp:}") String localOtp) {
         this.authService = authService;
         this.authenticationManager = authenticationManager;
         this.rateLimiter = rateLimiter;
         this.jwtTokens = jwtTokens;
         this.localOtp = localOtp;
+        this.clientAddress = clientAddress;
     }
 
     @GetMapping("/csrf")
@@ -75,7 +78,7 @@ public class AuthController {
                                                        HttpServletRequest servletRequest,
                                                        HttpServletResponse servletResponse) {
         try {
-            String client = servletRequest.getRemoteAddr();
+            String client = clientAddress.of(servletRequest);
             if (!rateLimiter.isAllowed(client)) {
                 return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of("message", "Too many sign-in attempts. Please try again later."));
             }
@@ -85,7 +88,7 @@ public class AuthController {
             rateLimiter.succeeded(client);
             return ResponseEntity.ok(Map.of("email", authentication.getName()));
         } catch (AuthenticationException exception) {
-            rateLimiter.failed(servletRequest.getRemoteAddr());
+            rateLimiter.failed(clientAddress.of(servletRequest));
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Invalid email or password, or email is not verified."));
         }
     }

@@ -74,6 +74,7 @@ The frontend is an independent React/Vite application that accepts Java source a
 
 - **Done:** function-call rows in frames (both modes, hover source); stack-first layout with controls below; trace header, step context and Loop status commented out; state changes under heap/stack; parameters → calls → locals → loops → other ordering; compact Normal-mode cards and bold headings; loop boxes with condition corner, own variables, in-loop calls and nested loops; per-iteration history in the Focused box; Nested loops example.
 - **Done (later on 2026-10-31):** no per-index types in arrays; smaller variable boxes everywhere; collapsible function frames; heap objects open independently (bug fix); fixed-height stack/heap so the step controls never move.
+- **Done (deployment prep):** Static Web Apps config (`public/staticwebapp.config.json`) and CI build/deploy job; frontend declared complete by the project owner.
 - **Pending:** `pnpm run build` and browser check locally; decide whether the commented-out header/step context/Loop status code should be deleted; merge the feature branch after review.
 
 ### Frontend visual update

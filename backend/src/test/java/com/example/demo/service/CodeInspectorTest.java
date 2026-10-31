@@ -53,4 +53,20 @@ class CodeInspectorTest {
             assertThat(api.api()).contains("exec");
         });
     }
+
+    @Test
+    void blocksEnvironmentAccessAndMethodReferences() {
+        var result = inspector.inspect("""
+                public class Demo {
+                  public static void main(String[] args) {
+                    String secret = System.getenv("DB_PASSWORD");
+                    java.util.function.Function<String, String> env = System::getenv;
+                    java.util.function.IntConsumer stop = System::exit;
+                  }
+                }
+                """);
+
+        assertThat(result.blockedApis()).extracting(api -> api.api())
+                .contains("System.getenv", "System::getenv", "System::exit");
+    }
 }

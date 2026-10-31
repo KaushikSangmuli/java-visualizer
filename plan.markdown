@@ -14,9 +14,10 @@
 | Stack-first trace layout, compact variable boxes, collapsible frames, fixed step controls, heap objects open independently | Done on `feature/function-box-implementation` | `pnpm run build`, browser check |
 | Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Code present | Build, migrations, browser auth flow, Brevo in staging |
 | Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done on `feature/function-box-implementation` | `mvn clean verify`, SQL Server migration check, optional UI |
-| Stage 3 Docker / local compose | Dockerfile only | Compose, image checks, sample traces in container |
-| Stage 4–6 GitHub Actions CI/CD and Azure | Not started | All |
-| Stage 7 production readiness / sandbox gate | Not started | All |
+| Stage 3 Docker image | Dockerfile ready (dependency cache, non-root, JDK 21, writable H2 folder); local `docker run` documented | First build in GitHub Actions; sample traces inside the container |
+| Stage 4 GitHub Actions CI | `.github/workflows/ci-cd.yml`: backend `mvn verify`, frontend build, Docker build + image check | First green run on a pull request |
+| Stage 5–6 Azure deployment (SWA Free, Container Apps, Azure SQL free, Brevo, GHCR, OIDC) | Workflow deploy jobs and step-by-step guide `docs/DEPLOYMENT.md` ready; skipped until Azure variables exist | Create Azure resources, set GitHub variables/secrets, first deploy and smoke test |
+| Stage 7 production readiness / sandbox gate | User-code JVM sandboxed (Security Manager: no env/files/network/processes); blocklist gaps closed; per-user limits | Private beta first; per-user CPU/memory isolation and threat review before public launch |
 | Future: DSA sheet, company lists, LeetCode picker | Not started | Product decisions |
 
 **Repository root:** `java-visualizer/` (the directory containing `backend/`, `frontend/`, and this file).
@@ -87,7 +88,7 @@ Use UUID/uniqueidentifier primary keys, UTC timestamps, foreign keys, unique con
 | `app_user` | Account id, normalized email, email verification time, password hash (nullable only if a future social-only account is supported), status, created/updated/deleted timestamps. Store no plaintext password. |
 | `user_identity` | Extensible login identities: user id, provider (`local_email`, later `google`, later `phone`), provider subject/normalized identifier, verified timestamp. Unique provider + subject. Do not assume Gmail OAuth and email OTP are the same identity mechanism. |
 | `verification_challenge` | Signup verification and password-reset challenges: user/destination, purpose, code hash, created/expiry/consumed times, failed attempts, resend count/next-allowed time. Store a hash, never the delivered OTP. |
-| Server-side session tables | Not used. Authentication is stateless JWT; password-reset does not immediately revoke already issued JWTs, which remain valid until their 30-minute expiry. |
+| Server-side session tables | Not used; the `SPRING_SESSION` tables created by V2 are dropped by V4 (2026-10-31). Authentication is stateless JWT; password-reset does not immediately revoke already issued JWTs, which remain valid until their 30-minute expiry. |
 | `visualization_run` | **Implemented (V3).** One row per visualization by a signed-in user: time, outcome SUCCESS/FAILED, status, message, failure reason, step count, truncated, code length, duration. No source code. Cascade-deleted with the user. |
 | `saved_project` | User-owned project label, created/updated time, optional archive/delete time. |
 | `saved_source` | User-owned source file/project id, safe filename, Java source, language/version metadata, created/updated time. Save only on explicit action. |
@@ -146,6 +147,8 @@ Azure's monthly free grants are shared at subscription level, not reserved solel
 ## 5. Docker and Online Execution Safety Gate
 
 The existing backend runs user code in a child debuggee JVM but that JVM still shares the backend container's OS identity, filesystem, and network unless additional isolation is applied. A Docker image alone does not make this safe for arbitrary public submissions.
+
+**Update 2026-10-31:** the child JVM now runs under a Java Security Manager policy that denies environment variables, file access outside its own classes, network, process creation and private reflection, so hosted secrets in environment variables are no longer readable by user code. CPU/memory isolation between users of one replica and a formal threat review are still outstanding, so the first deployment is a private beta.
 
 Before public code execution, require a threat-model review and an execution boundary with no network, non-root identity, read-only base filesystem, isolated temporary workspace, strict CPU/memory/process/file limits, hard wall-clock kill, restricted syscalls/capabilities, and cleanup even on crash. Prefer one disposable isolated sandbox per execution (or a proven equivalent). Keep compiler/JDI support in the runtime image: use a full JDK 21 image, not a JRE-only image, because `JavaCompiler` and `jdk.jdi` are required. Do not mount application secrets or the host Docker socket into a user-code sandbox. If this safety gate is not ready, deploy privately for trusted demonstrations and disable anonymous execution on the public endpoint.
 
@@ -254,6 +257,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
 
 ## 10. Change History
+
+### 2026-10-31 — Repository made deployable
+
+**Technical analysis:** Review before deployment fixed: user code could read hosted secrets from environment variables (now a Security Manager sandbox plus `getenv`/method-reference blocklist); all users behind the Azure ingress shared one rate-limit/throttle bucket (now per account and real client IP); the CSRF cookie would break cross-site login (now `SameSite=None; Secure` in the azure profile); Hibernate validation could stop the app on SQL Server (`ddl-auto=none`, Flyway owns the schema); the image could not create its H2 folder; unused Spring Session tables (dropped by V4). Added `.github/workflows/ci-cd.yml` (tests, builds, GHCR image, Container Apps and Static Web Apps deploy via OIDC, guarded until Azure variables exist), `frontend/public/staticwebapp.config.json` and `docs/DEPLOYMENT.md`.
+
+**Files changed:** backend `Tracer.java`, `CodeInspector.java`, `ClientAddress.java`, `VisualizeController.java`, `AuthController.java`, `SecurityConfiguration.java`, properties, migration V4, `Dockerfile`, `.dockerignore`, tests, README; frontend `public/staticwebapp.config.json`; `.github/workflows/ci-cd.yml`; `docs/DEPLOYMENT.md`; documentation and plans; `README.md`.
+
+**Verification:** Sandbox and examples run with the real tracer on JDK 21; inspector run with JavaParser 3.17; other Java changes type-checked against stand-ins. Not yet run: `mvn clean verify` with these changes, Docker build, CI workflow, Azure.
 
 ### 2026-10-31 — Run history stored per user
 

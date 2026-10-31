@@ -274,3 +274,11 @@ The frontend is wired to the backend JWT flow but has not been verified end-to-e
 - `src/styles.css` — compact `.variable-box`, value shapes and `.array-element`; `.frame-collapse`; `.value-shape.compact`; fixed `.inspect-scroll` height.
 
 **Verification:** Headless Chromium with a real trace of a program with `int[]`, `int[][]` and `String[]`: the controls stayed at the same y-position on all 21 steps in both modes; three heap objects stayed open together and closing one left two open; a collapsed frame stayed collapsed after stepping. Run `pnpm run build` locally.
+
+### 2026-10-31 — Static Web Apps configuration and CI build
+
+**Technical analysis:** Added `public/staticwebapp.config.json` (copied into `dist/` by Vite) with an SPA navigation fallback to `index.html` and basic security headers for Azure Static Web Apps. The CI/CD workflow builds the frontend with `pnpm install --frozen-lockfile` and `pnpm run build`, setting `VITE_API_BASE_URL` from the repository variable `BACKEND_URL`, and uploads `dist/` to Static Web Apps on pushes to `main` once Azure is configured. No component code changed.
+
+**Files and components changed:** `public/staticwebapp.config.json` (new); `../.github/workflows/ci-cd.yml` (frontend job and Static Web Apps deploy); `../docs/DEPLOYMENT.md`.
+
+**Verification:** JSON validated locally; the CI build and the Static Web Apps upload have not run yet (first run happens on the pull request / push to `main`).

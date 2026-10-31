@@ -83,11 +83,15 @@ Full details: [backend/README.md](backend/README.md) and [backend/documentation/
 | Function-call boxes, loop boxes, stack-first layout, collapsible frames, compact variables | Done on `feature/function-box-implementation`; local build/browser check pending |
 | Accounts (signup, OTP, JWT login, reset) | Implemented; end-to-end verification pending |
 | Run history in the database | Implemented on the feature branch; `mvn clean verify` pending |
-| Docker, GitHub Actions CI/CD, Azure deployment | Planned |
+| Docker image, GitHub Actions CI/CD, Azure deployment config | Ready; Azure resources not created yet ([deployment guide](docs/DEPLOYMENT.md)) |
 | DSA sheet / LeetCode problem picker | Future idea |
 
 The detailed plan, status and change history live in [plan.markdown](plan.markdown), [backend/documentation](backend/documentation/) and [frontend/documentation](frontend/documentation/).
 
+## Deployment
+
+Azure Static Web Apps (frontend), Azure Container Apps (backend image from GitHub Packages), Azure SQL Database free offer and Brevo, deployed by GitHub Actions on every push to `main`. Step-by-step setup: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Safety
 
-Running arbitrary Java is not safe without OS-level sandboxing. The API blocklist, time/step/output limits, rate limits and separate JVM are guardrails, not a sandbox. Use trusted code locally; public hosting of code execution is gated on the isolation review in [plan.markdown](plan.markdown).
+User programs run in a separate JVM under a Java Security Manager policy: no environment variables, no files except their own classes, no network, no new processes. A source blocklist, time/step/output limits, per-user rate limits and a non-root container add further guardrails. CPU and memory are not isolated per user, so treat a hosted instance as a private beta until the production-readiness review in [plan.markdown](plan.markdown).
