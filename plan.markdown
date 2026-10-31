@@ -458,6 +458,15 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 | Container App name / `BACKEND_URL` | A5 | ... / `https://....azurecontainerapps.io` |
 | Managed identity client ID | A6 | ... |
 
+**No-charge rules (owner decision 2026-11-01: free plans only; if a free allowance runs out the app may stop, but nothing may be billed):**
+
+- Subscription: Azure only stops resources instead of billing when the subscription has a **spending limit** (Azure for Students, or Free Trial while on credit). Pay-As-You-Go has no spending limit; there, budgets only *alert*, so add the automatic stop (A7).
+- Static Web Apps: plan **Free** only (never Standard).
+- Azure SQL: **Apply free offer**; free-limit behaviour **Auto-pause the database until next month** (never "Continue using database for additional charges" — cannot be switched back); **Microsoft Defender for SQL: Not now** (its trial becomes paid).
+- Container Apps: environment **Consumption only** (no Dedicated/workload profiles); min replicas **0**, max **1**; logs destination **Don't save logs** (or Azure Monitor/Log Analytics only if inside its free ingestion); no Azure Container Registry (image comes from public GHCR); no VNet, no custom domain certificates, no Dapr add-ons.
+- Do not enable anything offered as a trial (Defender for Cloud plans, Application Insights paid tiers, geo-redundant backups).
+- A7 budget alert, plus on Pay-As-You-Go an automatic stop of the Container App when the budget threshold is reached (cost data lags several hours, so it is a backstop, not a hard cap).
+
 **Checklist by place** (do the groups in this order: GitHub part A → Brevo → Azure → GitHub part B → smoke test; Brevo and the Azure steps can be done in parallel). Status as of 2026-11-01.
 
 ### GitHub — part A (before Azure)

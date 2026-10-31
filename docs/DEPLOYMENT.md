@@ -22,6 +22,8 @@ Browser ──► Static Web Apps (https://<name>.azurestaticapps.net)      Reac
 
 Free limits change; re-check each service's review page before clicking **Create**, and set a budget alert (step 9).
 
+> **Free plans only.** The owner will accept the app stopping when a free allowance runs out, but nothing may be billed. On every Create screen: Static Web Apps **Free**; Azure SQL free offer with **Auto-pause until next month** and **Microsoft Defender for SQL: Not now**; Container Apps environment **Consumption only**, logs **Don't save logs**, min 0 / max 1 replicas, no Azure Container Registry; decline every trial. A hard stop (instead of billing) exists only on subscriptions with a spending limit (Azure for Students, Free Trial credit); on Pay-As-You-Go the budget alert must also stop the Container App automatically. The full rule list is in `plan.markdown` section 11.
+
 > **Known limitation of this split setup.** The frontend and backend are on different sites, so the login cookie is a cross-site cookie (`SameSite=None; Secure`). Chrome, Edge and Firefox accept it; **Safari and all iPhone/iPad browsers block it by default**, so login fails there. The fix is a custom domain later (`www.example.com` → Static Web Apps, `api.example.com` → Container Apps), after which the cookie is same-site and works everywhere.
 
 ## How things run automatically
