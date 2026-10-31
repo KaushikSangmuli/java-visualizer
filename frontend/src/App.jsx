@@ -170,6 +170,15 @@ export default function App() {
   }
 
   const heap = step?.heap ?? null;
+  // Per-step variable/heap deltas; shown under the heap (Full analysis) or under the stack (Normal mode).
+  const stateChanges = step && (((step.variableChanges?.length ?? 0) > 0 || (step.heapChanges?.length ?? 0) > 0) && <details className="state-changes">
+                      <summary>State changes <span>{(step.variableChanges?.length ?? 0) + (step.heapChanges?.length ?? 0)}</span></summary>
+                      {step.variableChanges?.map((change, index) => <div className="state-change-row" key={`var-${index}`}><b>{change.change}</b><code>{change.frame}.{change.name}</code><span>{change.before ?? '—'} → {change.after ?? '—'}</span></div>)}
+                      {step.heapChanges?.map((change, index) => <div className="heap-change-group" key={`heap-${index}`}>
+                        <div className="state-change-row"><b>{change.change}</b><code>{change.className || change.id}</code><span>{change.kind}</span></div>
+                        {change.values?.map((value, valueIndex) => <div className="state-change-detail" key={`${value.name}-${valueIndex}`}><b>{value.change}</b><code>{value.name}</code><span>{value.before ?? '—'} → {value.after ?? '—'}</span></div>)}
+                      </div>)}
+                    </details>);
   const eventClass = step?.event === 'exception' ? 'event-exception' : step?.event === 'call' ? 'event-call' : step?.event === 'return' ? 'event-return' : 'event-step';
 
   if (authLoading) return <div className="auth-loading" role="status">Loading your account…</div>;
@@ -242,11 +251,26 @@ export default function App() {
                 <span className="analysis-toggle-track"><i /></span><strong>{fullAnalysis ? 'ON' : 'OFF'}</strong>
               </button>
             </div>
-            <article className="trace-card panel">
+            <div className={`inspect-grid ${fullAnalysis ? '' : 'normal-mode-grid'}`}>
+              <article className="inspect-card panel">
+                <div className="inspect-heading"><div><span className="inspect-kicker">01 / STACK</span><h3>Call stack</h3></div><span className="count-chip">{step?.frames?.length ?? 0} frames</span></div>
+                <div className="inspect-scroll stack-scroll"><StackPanel frames={step?.frames ?? []} heap={heap} fullAnalysis={fullAnalysis} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} onFocus={setFocusedItem} /></div>
+              </article>
+              {fullAnalysis && <article className="inspect-card panel heap-panel">
+                <div className="inspect-heading"><div><span className="inspect-kicker">02 / MEMORY</span><h3>Heap & statics</h3></div><span className="count-chip">{heap?.objects?.length ?? 0} objects</span></div>
+                <div className="inspect-scroll heap-scroll"><HeapPanel heap={heap} selectedId={selectedObjectId} onSelect={setSelectedObjectId} onFocus={setFocusedItem} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /></div>
+                {stateChanges && <div className="heap-state-changes">{stateChanges}</div>}
+              </article>}
+            </div>
+            {!fullAnalysis && stateChanges && <div className="panel normal-state-changes">{stateChanges}</div>}
+
+            <article className={`trace-card panel ${step ? 'controls-only' : ''}`}>
+              {/* Execution trace header (title, finished status, step counter) hidden for now: the slider shows progress.
               <div className="panel-heading trace-heading">
                 <div className="panel-title-group"><span className="panel-icon trace-icon"><Icon name="play" size={16} /></span><div><h2>Execution trace</h2><p>{response ? statusCaption : 'Your program, one moment at a time'}</p></div></div>
                 {trace.length > 0 && <span className="step-counter">STEP <b>{currentStepIndex + 1}</b><i>/</i>{trace.length}</span>}
               </div>
+              */}
 
               {!response && !requestError && (
                 <div className="trace-placeholder">
@@ -271,21 +295,16 @@ export default function App() {
               )}
               {step && (
                 <>
+                  {/* Step context hidden for now: event badge, source line, explanation, line type and return value.
+                      The editor highlights the line and call boxes show return values.
                   <div className="step-context">
                     <div className="step-context-top"><span className={`event-badge ${eventClass}`}>{step.event}</span><span className="context-line-label">SOURCE LINE</span><span className="context-line-number">{step.line}</span></div>
                     <pre className="active-source-line"><span>{String(step.line).padStart(2, '0')}</span>{currentSourceLine || 'Source line unavailable'}</pre>
                     {step.explanation && <p className="step-explanation">{step.explanation}</p>}
                     {step.lineType && <span className="line-type-chip">{step.lineType.replaceAll('_', ' ')}</span>}
                     {step.returnValue !== null && step.returnValue !== undefined && <div className="return-value"><span>RETURN VALUE</span><code>{step.returnValue}</code></div>}
-                    {((step.variableChanges?.length ?? 0) > 0 || (step.heapChanges?.length ?? 0) > 0) && <details className="state-changes">
-                      <summary>State changes <span>{(step.variableChanges?.length ?? 0) + (step.heapChanges?.length ?? 0)}</span></summary>
-                      {step.variableChanges?.map((change, index) => <div className="state-change-row" key={`var-${index}`}><b>{change.change}</b><code>{change.frame}.{change.name}</code><span>{change.before ?? '—'} → {change.after ?? '—'}</span></div>)}
-                      {step.heapChanges?.map((change, index) => <div className="heap-change-group" key={`heap-${index}`}>
-                        <div className="state-change-row"><b>{change.change}</b><code>{change.className || change.id}</code><span>{change.kind}</span></div>
-                        {change.values?.map((value, valueIndex) => <div className="state-change-detail" key={`${value.name}-${valueIndex}`}><b>{value.change}</b><code>{value.name}</code><span>{value.before ?? '—'} → {value.after ?? '—'}</span></div>)}
-                      </div>)}
-                    </details>}
                   </div>
+                  */}
                   <div className="step-controls">
                     <button type="button" className="step-icon-button" onClick={() => goToStep(currentStepIndex - 1)} disabled={currentStepIndex === 0} aria-label="Previous step" title="Previous step"><Icon name="back" /></button>
                     <button type="button" className="step-play-button" onClick={() => {
@@ -298,7 +317,7 @@ export default function App() {
                     <div className="timeline-control">
                       {hoveredStepIndex !== null && <span className="timeline-hover-tooltip" style={{ '--hover-progress': `${trace.length > 1 ? (hoveredStepIndex / (trace.length - 1)) * 100 : 0}%` }} role="tooltip">Step {hoveredStepIndex + 1}</span>}
                       <input type="range" min="0" max={Math.max(0, trace.length - 1)} value={currentStepIndex} style={{ '--progress': `${progress}%` }} aria-label="Trace step" title={`Step ${currentStepIndex + 1} of ${trace.length}`} onChange={(event) => { const index = Number(event.target.value); goToStep(index); setHoveredStepIndex(index); }} onMouseMove={(event) => { const bounds = event.currentTarget.getBoundingClientRect(); const fraction = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)); setHoveredStepIndex(Math.round(fraction * Math.max(0, trace.length - 1))); }} onMouseLeave={() => setHoveredStepIndex(null)} onFocus={() => setHoveredStepIndex(currentStepIndex)} onBlur={() => setHoveredStepIndex(null)} />
-                      <div className="timeline-labels"><span>START</span><span>{trace.length ? `${trace.length} EVENTS` : 'NO EVENTS'}</span></div>
+                      <div className="timeline-labels"><span>STEP {currentStepIndex + 1} / {trace.length}</span><span>{trace.length ? `${trace.length} EVENTS` : 'NO EVENTS'}</span></div>
                     </div>
                   </div>
                 </>
@@ -309,16 +328,6 @@ export default function App() {
 
             {fullAnalysis && <FocusedPanel focus={focusedItem} heap={heap} onClear={() => setFocusedItem(null)} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />}
 
-            <div className={`inspect-grid ${fullAnalysis ? '' : 'normal-mode-grid'}`}>
-              <article className="inspect-card panel">
-                <div className="inspect-heading"><div><span className="inspect-kicker">01 / STACK</span><h3>Call stack</h3></div><span className="count-chip">{step?.frames?.length ?? 0} frames</span></div>
-                <div className="inspect-scroll stack-scroll"><StackPanel frames={step?.frames ?? []} heap={heap} fullAnalysis={fullAnalysis} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} onFocus={setFocusedItem} /></div>
-              </article>
-              {fullAnalysis && <article className="inspect-card panel heap-panel">
-                <div className="inspect-heading"><div><span className="inspect-kicker">02 / MEMORY</span><h3>Heap & statics</h3></div><span className="count-chip">{heap?.objects?.length ?? 0} objects</span></div>
-                <div className="inspect-scroll heap-scroll"><HeapPanel heap={heap} selectedId={selectedObjectId} onSelect={setSelectedObjectId} onFocus={setFocusedItem} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /></div>
-              </article>}
-            </div>
 
             {response?.truncated && <div className="truncated-banner">Trace paused at a safety limit. The steps captured so far are available above.</div>}
           </div>

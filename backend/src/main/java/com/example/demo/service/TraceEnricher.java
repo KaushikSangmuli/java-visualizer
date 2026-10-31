@@ -106,7 +106,8 @@ public class TraceEnricher {
         Map<String, VariableSnapshot> result = new LinkedHashMap<>();
         for (int frameIndex = 0; frameIndex < frames.size(); frameIndex++) {
             FrameSnapshot frame = frames.get(frameIndex);
-            String frameKey = frame.className() + "." + frame.method() + "[" + frameIndex + "]";
+            // Number frames from the bottom (main = 0) so existing frames keep their key when a call is pushed.
+            String frameKey = frame.className() + "." + frame.method() + "[" + (frames.size() - 1 - frameIndex) + "]";
             for (VariableSnapshot variable : frame.variables()) result.put(frameKey + "." + variable.name(), variable);
         }
         return result;

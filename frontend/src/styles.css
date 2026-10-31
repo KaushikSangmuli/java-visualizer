@@ -103,6 +103,11 @@ h1 span { color: var(--blue); }
 .analysis-toggle.is-on .analysis-toggle-track { background: #2eaf80; }
 .analysis-toggle.is-on .analysis-toggle-track i { transform: translateX(12px); }
 .trace-card { min-height: 310px; overflow: hidden; }
+.trace-card.controls-only { min-height: 0; }
+.trace-card.controls-only .step-controls { border-top: 0; }
+.heap-state-changes { padding: 2px 12px 10px; }
+.normal-state-changes { padding: 6px 12px 10px; }
+.normal-state-changes .state-changes { margin-top: 0; border-top: 0; }
 .trace-heading { min-height: 67px; }
 .trace-icon { color: #317c6b; background: #effaf6; border-color: #e1f4ec; }
 .step-counter { color: #9ba7b4; font: 9px var(--mono); letter-spacing: .4px; white-space: nowrap; }
@@ -164,19 +169,25 @@ h1 span { color: var(--blue); }
 .focused-object-details { display: flex; flex-wrap: wrap; gap: 5px; width: 100%; padding-top: 4px; }
 .focused-field { min-width: 110px; }
 .focused-field > span { display: flex; flex-direction: column; gap: 2px; }
-.inspect-scroll { max-height: 320px; overflow: auto; }
+.inspect-scroll { max-height: 460px; overflow: auto; }
 .frame-list { display: flex; flex-direction: column; gap: 7px; padding: 8px; }
 .frame-card { padding: 8px; border: 1.5px solid #263f52; border-radius: 7px; background: #fff; }
 .frame-card.frame-active { border-color: #246b4c; background: #e9f9e9; box-shadow: inset 3px 0 #43a56b; }
-.normal-frame { min-height: 110px; padding: 7px 9px; border: 2px solid #17251b; border-radius: 7px; background: #8eea92; }
-.normal-frame .normal-frame-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 2px 5px; color: #273d2c; font: 10px 'Segoe UI', sans-serif; }
-.normal-variable-grid { display: flex; min-height: 76px; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 7px; }
-.normal-frame .variable-box { width: 80px; min-width: 80px; min-height: 78px; padding: 5px; border: 2px solid #222; border-radius: 2px; background: #f5bfd0; }
+.normal-frame { min-height: 0; padding: 7px 9px; border: 2px solid #17251b; border-radius: 7px; background: #8eea92; }
+.normal-frame .normal-frame-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 2px 6px; color: #1d2e21; font: 700 14px 'Segoe UI', sans-serif; }
+.normal-frame-name { font-family: var(--mono); }
+.normal-frame-return { font-size: 12px; }
+.normal-variable-group + .normal-variable-group, .function-calls + .normal-variable-group { margin-top: 6px; }
+.normal-group-label { display: block; margin: 0 2px 3px; color: #2f4a34; font: 700 8px 'Segoe UI', sans-serif; letter-spacing: .5px; text-transform: uppercase; }
+.normal-variable-grid { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-start; gap: 5px; }
+.normal-frame .variable-box { width: auto; min-width: 54px; min-height: 0; aspect-ratio: auto; gap: 2px; padding: 3px 6px; border: 1.5px solid #222; border-radius: 2px; background: #f5bfd0; }
 .normal-frame .variable-box-heading { flex-direction: row; align-items: baseline; justify-content: center; gap: 8px; }
-.normal-frame .variable-box-heading strong { font-size: 10px; }
-.normal-frame .variable-box-heading small { font-size: 9px; }
-.normal-frame .value-display.primitive .value-shape { min-width: auto; min-height: auto; padding: 0; border: 0; background: transparent; font: 700 23px var(--mono); }
-.normal-frame .variable-box.inline-array, .normal-frame .variable-box.inline-object { width: auto; min-width: 112px; max-width: min(100%, 460px); min-height: 78px; }
+.normal-frame .variable-box.primitive { width: auto; aspect-ratio: auto; }
+.normal-frame .variable-box-heading { gap: 5px; }
+.normal-frame .variable-box-heading strong { font-size: 9px; }
+.normal-frame .variable-box-heading small { font-size: 8px; }
+.normal-frame .value-display.primitive .value-shape { min-width: auto; min-height: auto; padding: 0; border: 0; background: transparent; font: 700 14px var(--mono); }
+.normal-frame .variable-box.inline-array, .normal-frame .variable-box.inline-object { width: auto; min-width: 90px; max-width: min(100%, 460px); min-height: 0; }
 .function-calls { display: grid; gap: 4px; margin-top: 7px; }
 .function-calls h5 { margin: 0; color: #526d55; font: 700 8px 'Segoe UI', sans-serif; letter-spacing: .5px; text-transform: uppercase; }
 .function-call-state { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 8px; padding: 5px 7px; border: 1px solid #9babb5; border-radius: 4px; background: #f5f8fa; color: #294457; position: relative; cursor: help; }
@@ -220,14 +231,16 @@ h1 span { color: var(--blue); }
 .frame-heading { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
 .frame-rank { color: #7b93b6; font-size: 7px; font-weight: 700; letter-spacing: .8px; }
 .frame-active .frame-rank { color: #286c47; }
-.frame-signature { min-width: 0; overflow: hidden; color: #28394d; font: 11px var(--mono); white-space: nowrap; text-overflow: ellipsis; }
-.frame-signature span { color: #5d6e7e; }
+.frame-signature { min-width: 0; overflow: hidden; color: #28394d; font: 700 14px var(--mono); white-space: nowrap; text-overflow: ellipsis; }
+.frame-signature span { color: #4b5d6e; font-size: 12px; }
 .frame-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; margin-top: 5px; color: #697b90; font: 9px var(--mono); overflow-wrap: anywhere; }
 .call-site { color: #386ab3; }
 .variable-group { margin-top: 7px; padding: 5px; border: 1px solid #759b77; border-radius: 5px; background: rgba(255,255,255,.42); }
 .variable-group h5 { margin: 0 0 6px; color: #526d55; font: 700 8px 'Segoe UI', sans-serif; letter-spacing: .5px; text-transform: uppercase; }
 .local-group { border-color: #bdcbd2; background: #f6fafb; }
 .local-group h5 { color: #71818a; }
+.other-group { border-color: #d6cbe0; background: #faf7fc; }
+.other-group h5 { color: #7a6b88; }
 .variable-grid { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 5px; }
 .variable-box { display: flex; min-width: 66px; min-height: 68px; flex-direction: column; align-items: center; justify-content: space-between; gap: 5px; padding: 4px; border: 1px solid #35495a; border-radius: 3px; background: #f3c3d1; }
 .variable-box.primitive { width: 68px; aspect-ratio: 1; }

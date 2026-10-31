@@ -85,17 +85,25 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
   return (
     <div className="frame-list">
       {frames.map((frame, index) => {
-        const parameters = (frame.variables ?? []).filter((variable) => variable.kind === 'parameter' || variable.kind === 'this');
-        const locals = (frame.variables ?? []).filter((variable) => variable.kind !== 'parameter' && variable.kind !== 'this');
+        // Variables are always shown in the same order: parameters, local variables, then anything else (e.g. `this`).
+        const variables = frame.variables ?? [];
+        const parameters = variables.filter((variable) => variable.kind === 'parameter');
+        const locals = variables.filter((variable) => variable.kind === 'local');
+        const others = variables.filter((variable) => variable.kind !== 'parameter' && variable.kind !== 'local');
         const callSite = frames[index + 1]?.line;
+        const renderVariable = (variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} heap={fullAnalysis ? undefined : heap} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />;
         if (!fullAnalysis) {
-          const renderNormalVariable = (variable) => {
-            return <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} heap={heap} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />;
-          };
+          const normalGroup = (label, items) => items.length > 0 && <div className="normal-variable-group">
+            <span className="normal-group-label">{label}</span>
+            <div className="normal-variable-grid">{items.map(renderVariable)}</div>
+          </div>;
           return <article className="frame-card normal-frame" key={`${frame.className}-${frame.method}-${index}`}>
-            <div className="normal-frame-heading"><span>Name : {frame.method}</span><span>returns {displayType(frame.returnType)}</span></div>
-            <div className="normal-variable-grid">{(frame.variables ?? []).map(renderNormalVariable)}</div>
+            <div className="normal-frame-heading"><span className="normal-frame-name">{frame.method}</span><span className="normal-frame-return">returns {displayType(frame.returnType)}</span></div>
+            {normalGroup('Parameters', parameters)}
             <FunctionCalls calls={frame.calls} />
+            {normalGroup('Local variables', locals)}
+            {normalGroup('Other', others)}
+            {variables.length === 0 && <div className="empty-variables">No visible variables at this line.</div>}
           </article>;
         }
         return <article className={`frame-card ${index === 0 ? 'frame-active' : ''}`} key={`${frame.className}-${frame.method}-${index}`}>
@@ -104,10 +112,11 @@ export function StackPanel({ frames = [], heap, onReference, onFocus, fullAnalys
             <span className="frame-signature"><strong>{frame.method}</strong><span> returns {displayType(frame.returnType)}</span></span>
           </div>
           <div className="frame-meta"><span>{displayType(frame.className)} · line {frame.line}</span>{callSite != null && <span className="call-site">called from line {callSite}</span>}</div>
-          {parameters.length > 0 && <section className="variable-group parameter-group"><h5>Parameters</h5><div className="variable-grid">{parameters.map((variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />)}</div></section>}
-          {locals.length > 0 && <section className="variable-group local-group"><h5>Local variables</h5><div className="variable-grid">{locals.map((variable) => <VariableBox key={`${variable.name}-${variable.kind}`} variable={variable} onReference={onReference} onFocus={() => onFocus({ kind: 'variable', name: variable.name, variable })} />)}</div></section>}
+          {parameters.length > 0 && <section className="variable-group parameter-group"><h5>Parameters</h5><div className="variable-grid">{parameters.map(renderVariable)}</div></section>}
           <FunctionCalls calls={frame.calls} />
-          {parameters.length === 0 && locals.length === 0 && <div className="empty-variables">No visible variables at this line.</div>}
+          {locals.length > 0 && <section className="variable-group local-group"><h5>Local variables</h5><div className="variable-grid">{locals.map(renderVariable)}</div></section>}
+          {others.length > 0 && <section className="variable-group other-group"><h5>Other</h5><div className="variable-grid">{others.map(renderVariable)}</div></section>}
+          {variables.length === 0 && <div className="empty-variables">No visible variables at this line.</div>}
         </article>;
       })}
     </div>

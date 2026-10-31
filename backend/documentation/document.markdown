@@ -368,3 +368,11 @@ The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it h
 - `samples/FunMulti.java` and `samples/fun_multi.json` — nested-call sample.
 
 **Verification:** Maven Central is blocked in the coding environment, so `mvn verify` was not run. The changed classes compiled with JDK 21 against a local JavaParser 3.17 jar (the project uses 3.26.3), and the real `Tracer` + `TraceEnricher` were run outside Spring on `FunMulti` and on a program covering recursion (`fact`), `add(add(1, 2), 3)`, `new Node(5)`, `n.twice()`, a void method with String/char arguments and a one-line loop; all rows matched the expected behaviour. The seven new test methods passed under a minimal JUnit stand-in. Run `mvn clean verify` locally to confirm with the real dependencies.
+
+### 2026-10-31 — Stable frame keys for variable changes
+
+**Technical analysis:** `TraceEnricher.variables` keyed frames by their position from the top of the stack, so every method call or return shifted all existing frames and reported each of their variables as added/out of scope (a single `fun_add` call produced 20 changes). Frames are now numbered from the bottom (`main` = 0), so only the new or removed frame's variables are reported.
+
+**Files and methods changed:** `src/main/java/com/example/demo/service/TraceEnricher.java` — `variables`.
+
+**Verification:** Real FunMulti trace now reports 2 added variables on the `fun_add` call, 2 out-of-scope on return, and `result` changed afterwards. The function-call tests still pass under the stand-in runner; run `mvn clean verify` locally.
