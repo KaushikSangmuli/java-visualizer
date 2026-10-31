@@ -28,10 +28,13 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final EmailDeliveryService emailDelivery;
     private final String localOtp;
+    private final SignupAllowlist signupAllowlist;
 
     public AuthService(UserAccountRepository users, EmailChallengeRepository challenges,
                        PasswordEncoder passwordEncoder, EmailDeliveryService emailDelivery,
-                       @Value("${visualizer.auth.local-otp:}") String localOtp) {
+                       @Value("${visualizer.auth.local-otp:}") String localOtp,
+                       @Value("${visualizer.auth.allowed-signup-emails:}") String allowedSignupEmails) {
+        this.signupAllowlist = new SignupAllowlist(allowedSignupEmails);
         this.users = users;
         this.challenges = challenges;
         this.passwordEncoder = passwordEncoder;
@@ -43,6 +46,8 @@ public class AuthService {
     public void signup(String rawEmail, String password) {
         validatePasswordEncoding(password);
         String email = normalize(rawEmail);
+        // Beta gate: no account is created and no email is sent for addresses outside the allowlist.
+        if (!signupAllowlist.allows(email)) throw new SignupAllowlist.NotAllowedException();
         if (users.findByEmail(email).isPresent()) return; // Keep the public response identical for existing addresses.
         UserAccount user = users.save(new UserAccount(email, passwordEncoder.encode(password)));
         sendChallenge(email, EmailChallenge.Purpose.SIGNUP, false);

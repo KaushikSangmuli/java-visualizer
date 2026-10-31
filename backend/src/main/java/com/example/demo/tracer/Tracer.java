@@ -37,12 +37,16 @@ import com.sun.jdi.request.ExceptionRequest;
 import com.sun.jdi.request.MethodEntryRequest;
 import com.sun.jdi.request.MethodExitRequest;
 import com.sun.jdi.request.StepRequest;
+import com.example.demo.model.CollectionSnapshot;
 import com.example.demo.model.ExceptionInfo;
+import com.example.demo.model.LinkedNodeSnapshot;
+import com.example.demo.model.MapEntrySnapshot;
 import com.example.demo.model.HeapFieldSnapshot;
 import com.example.demo.model.HeapObjectSnapshot;
 import com.example.demo.model.HeapSnapshot;
 import com.example.demo.model.MemoryValue;
 import com.example.demo.model.StaticFieldSnapshot;
+import com.example.demo.model.TreeNodeSnapshot;
 import com.example.demo.model.FrameSnapshot;
 import com.example.demo.model.TraceStep;
 import com.example.demo.model.VariableSnapshot;
@@ -100,6 +104,35 @@ public class Tracer {
     private static final String[] EXCLUDED_CLASSES = {"java.*", "javax.*", "jdk.*", "sun.*", "com.sun.*"};
     private static final int DEFAULT_MAX_DISPLAYED_FRAMES = 50;
     private static final int MAX_CAPTURE_BYTES = 200_000;
+    private static final java.util.Set<String> BOXED_TYPES = java.util.Set.of(
+            "java.lang.Integer", "java.lang.Long", "java.lang.Short", "java.lang.Byte", "java.lang.Double",
+            "java.lang.Float", "java.lang.Character", "java.lang.Boolean");
+    private static final java.util.Set<String> NATURAL_ORDER_TYPES = java.util.Set.of(
+            "java.lang.Integer", "java.lang.Long", "java.lang.Short", "java.lang.Byte", "java.lang.Double",
+            "java.lang.Float", "java.lang.Character", "java.lang.Boolean", "java.lang.String");
+
+    /** Natural ordering of already-captured element values (no user code is run). */
+    private static final class NaturalOrder {
+        static int compare(MemoryValue left, MemoryValue right) {
+            String type = left.type();
+            try {
+                return switch (type) {
+                    case "java.lang.Double", "java.lang.Float" -> Double.compare(Double.parseDouble(left.value()), Double.parseDouble(right.value()));
+                    case "java.lang.Integer", "java.lang.Long", "java.lang.Short", "java.lang.Byte" -> Long.compare(Long.parseLong(left.value()), Long.parseLong(right.value()));
+                    case "java.lang.Boolean" -> Boolean.compare(Boolean.parseBoolean(left.value()), Boolean.parseBoolean(right.value()));
+                    default -> left.value().compareTo(right.value());   // String, Character
+                };
+            } catch (NumberFormatException mixed) {
+                return left.value().compareTo(right.value());
+            }
+        }
+    }
+
+    /** System properties user programs may read inside the sandbox (no paths, users or secrets). */
+    private static final List<String> SANDBOX_READABLE_PROPERTIES = List.of(
+            "java.version", "java.vendor", "java.specification.version", "line.separator",
+            "file.separator", "path.separator", "file.encoding", "stdout.encoding", "native.encoding",
+            "os.name", "os.arch", "java.vm.name", "user.language", "user.country");
 
     /** What trace() returns. truncatedReason is "max_steps", "timeout" or null. */
     public record TraceResult(List<TraceStep> steps, boolean truncated, String truncatedReason,
@@ -263,9 +296,34 @@ public class Tracer {
             Map<String, Connector.Argument> args = connector.defaultArguments();
             args.get("main").setValue(mainClass);
             args.get("suspend").setValue("true");   // start paused so we can set up requests first
+            // The policy URL has no spaces (they are %20-encoded), so it needs no quoting on Windows either.
+            String policy = writeSandboxPolicy().toUri().toString();
             args.get("options").setValue("-cp \"" + classesDir.toAbsolutePath() + "\""
-                    + " -Xmx128m -Xss1m -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8");
+                    + " -Xmx128m -Xss1m -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8"
+                    + " -Djava.security.manager=default -Djava.security.policy==" + policy);
             return connector.launch(args);
+        }
+
+        /**
+         * Sandbox for the user's program. The debuggee JVM runs with the Java Security Manager and
+         * ONLY this policy ("==" ignores the JDK's default policy files), so user code may read its own
+         * compiled classes and a few harmless system properties, and nothing else: no environment
+         * variables (which hold the backend's database password and signing secrets), no other files,
+         * no network, no new processes, no System.exit, no reflection on private members.
+         * The Security Manager is deprecated but fully functional in JDK 21, which the Docker image pins.
+         */
+        private Path writeSandboxPolicy() throws IOException {
+            String classes = classesDir.toAbsolutePath().toString().replace("\\", "\\\\");
+            StringBuilder policy = new StringBuilder("grant {\n")
+                    .append("  permission java.io.FilePermission \"").append(classes).append("\", \"read\";\n")
+                    .append("  permission java.io.FilePermission \"").append(classes).append(java.io.File.separator.replace("\\", "\\\\")).append("-\", \"read\";\n");
+            for (String property : SANDBOX_READABLE_PROPERTIES) {
+                policy.append("  permission java.util.PropertyPermission \"").append(property).append("\", \"read\";\n");
+            }
+            policy.append("};\n");
+            Path file = classesDir.toAbsolutePath().getParent().resolve("sandbox.policy");
+            java.nio.file.Files.writeString(file, policy.toString(), StandardCharsets.UTF_8);
+            return file;
         }
 
         private void shutdown(VirtualMachine vm, Process process, boolean vmEnded) {
@@ -314,7 +372,7 @@ public class Tracer {
 
         /** Captures user method entry while the new frame and its arguments are available. */
         private boolean onMethodEntry(MethodEntryEvent ev) {
-            if (!isTraceThread(ev.thread())) return true;
+            if (!isTraceThread(ev.thread()) || !isUserClass(ev.method().declaringType().name())) return true;
             if (steps.size() >= maxSteps) {
                 truncate("max_steps");
                 return false;
@@ -326,7 +384,7 @@ public class Tracer {
 
         /** Captures the return value directly from JDI without invoking code in the debuggee. */
         private boolean onMethodExit(MethodExitEvent ev, VirtualMachine vm) {
-            if (!isTraceThread(ev.thread())) return true;
+            if (!isTraceThread(ev.thread()) || !isUserClass(ev.method().declaringType().name())) return true;
             if (steps.size() >= maxSteps) {
                 truncate("max_steps");
                 return false;
@@ -544,6 +602,15 @@ public class Tracer {
                         continue;
                     }
 
+                    // Recognised java.util collections: keep only elements, size, key/value pairs or nodes.
+                    CollectionSnapshot collection = readCollection(object, item.depth());
+                    if (collection != null) {
+                        if (!collection.complete()) markTruncated("max_array_elements");
+                        objects.put(id, new HeapObjectSnapshot(Long.toString(id), className, "collection",
+                                List.of(), List.of(), collection.size(), collection.complete(), collection));
+                        continue;
+                    }
+
                     List<HeapFieldSnapshot> fields = new ArrayList<>();
                     boolean complete = true;
                     for (Field field : object.referenceType().allFields()) {
@@ -559,6 +626,312 @@ public class Tracer {
                     objects.put(id, new HeapObjectSnapshot(Long.toString(id), className, kind(object),
                             List.copyOf(fields), List.of(), -1, complete));
                 }
+            }
+
+            // ------------------------------------------------------------ collection views
+            // Collections are read through their private fields (JDI mirrors), never by calling their
+            // methods in the user's JVM. Unknown or unreadable collections fall back to the raw field view.
+
+            private CollectionSnapshot readCollection(ObjectReference object, int depth) {
+                String name = object.referenceType().name();
+                if (!name.startsWith("java.util.")) return null;
+                try {
+                    return switch (name) {
+                        case "java.util.ArrayList" -> list(object, "elementData", intField(object, "size"), depth);
+                        case "java.util.Vector" -> list(object, "elementData", intField(object, "elementCount"), depth);
+                        case "java.util.Stack" -> stack(object, depth);
+                        case "java.util.concurrent.CopyOnWriteArrayList" -> wholeArray(object, "array", depth);
+                        case "java.util.Arrays$ArrayList" -> wholeArray(object, "a", depth);
+                        case "java.util.ImmutableCollections$ListN" -> wholeArray(object, "elements", depth);
+                        case "java.util.ImmutableCollections$List12" -> pair(object, "list", depth);
+                        case "java.util.ImmutableCollections$Set12" -> pair(object, "set", depth);
+                        case "java.util.ImmutableCollections$SetN" -> sparseSet(object, depth);
+                        case "java.util.LinkedList" -> linkedList(object, depth);
+                        case "java.util.ArrayDeque" -> arrayDeque(object, depth);
+                        case "java.util.PriorityQueue" -> priorityQueue(object, depth);
+                        case "java.util.HashSet", "java.util.LinkedHashSet" -> setOf(object, get(object, "map"), depth);
+                        case "java.util.TreeSet" -> withTree(setOf(object, get(object, "m"), depth), get(object, "m"), false, depth);
+                        default -> {
+                            RawEntries map = mapEntries(object);
+                            if (map != null) yield withTree(mapOf(object, map, depth), object, true, depth);
+                            yield wrapped(object, name, depth);
+                        }
+                    };
+                } catch (RuntimeException unreadable) {
+                    return null;
+                }
+            }
+
+            /** Collections.unmodifiableX / synchronizedX: show the wrapped collection, marked read-only or synchronized. */
+            private CollectionSnapshot wrapped(ObjectReference object, String name, int depth) {
+                if (!name.startsWith("java.util.Collections$Unmodifiable") && !name.startsWith("java.util.Collections$Synchronized")) {
+                    return null;
+                }
+                for (String field : List.of("m", "list", "c", "s")) {
+                    if (get(object, field) instanceof ObjectReference inner) {
+                        CollectionSnapshot view = readCollection(inner, depth);
+                        if (view == null) return null;
+                        String note = name.contains("Unmodifiable") ? " (read-only)" : " (synchronized)";
+                        return new CollectionSnapshot(view.view(), view.typeName() + note, view.size(), view.items(),
+                                view.entries(), view.nodes(), view.order(), view.complete(), view.tree());
+                    }
+                }
+                return null;
+            }
+
+            private CollectionSnapshot list(ObjectReference object, String arrayField, int size, int depth) {
+                List<MemoryValue> items = new ArrayList<>();
+                boolean complete = readPrefix(get(object, arrayField), size, items, depth);
+                return snapshot("list", object, size, items, complete);
+            }
+
+            /** java.util.Stack keeps its top at the end of the array; the view lists the top first. */
+            private CollectionSnapshot stack(ObjectReference object, int depth) {
+                int size = intField(object, "elementCount");
+                List<MemoryValue> items = new ArrayList<>();
+                boolean complete = readPrefix(get(object, "elementData"), size, items, depth);
+                java.util.Collections.reverse(items);
+                return snapshot("stack", object, size, items, complete);
+            }
+
+            private CollectionSnapshot wholeArray(ObjectReference object, String arrayField, int depth) {
+                Value array = get(object, arrayField);
+                int size = array instanceof ArrayReference a ? a.length() : 0;
+                List<MemoryValue> items = new ArrayList<>();
+                boolean complete = readPrefix(array, size, items, depth);
+                return snapshot("list", object, size, items, complete);
+            }
+
+            /** List.of(a) / List.of(a, b) / Set.of(...) with one or two elements (e1 is a placeholder when absent). */
+            private CollectionSnapshot pair(ObjectReference object, String view, int depth) {
+                List<MemoryValue> items = new ArrayList<>();
+                for (String field : List.of("e0", "e1")) {
+                    Value value = get(object, field);
+                    if (value == null || isPlaceholder(value)) continue;
+                    items.add(element(value, depth));
+                }
+                return snapshot(view, object, items.size(), items, true);
+            }
+
+            private CollectionSnapshot sparseSet(ObjectReference object, int depth) {
+                int size = intField(object, "size");
+                List<MemoryValue> items = new ArrayList<>();
+                if (get(object, "elements") instanceof ArrayReference array) {
+                    for (Value value : array.getValues()) {
+                        if (value == null) continue;
+                        if (items.size() >= maxArrayElements) break;
+                        items.add(element(value, depth));
+                    }
+                }
+                return snapshot("set", object, size, items, items.size() == size);
+            }
+
+            private CollectionSnapshot linkedList(ObjectReference object, int depth) {
+                int size = intField(object, "size");
+                List<LinkedNodeSnapshot> nodes = new ArrayList<>();
+                List<MemoryValue> items = new ArrayList<>();
+                Value node = get(object, "first");
+                while (node instanceof ObjectReference current && nodes.size() < maxArrayElements) {
+                    MemoryValue value = element(get(current, "item"), depth);
+                    Value next = get(current, "next");
+                    nodes.add(new LinkedNodeSnapshot(Long.toString(current.uniqueID()), idOf(get(current, "prev")), value, idOf(next)));
+                    items.add(value);
+                    node = next;
+                }
+                return new CollectionSnapshot("linked-list", displayName(object), size, List.copyOf(items), List.of(),
+                        List.copyOf(nodes), null, nodes.size() == size);
+            }
+
+            /** Circular array: elements from head (front) to tail (back). */
+            private CollectionSnapshot arrayDeque(ObjectReference object, int depth) {
+                List<MemoryValue> items = new ArrayList<>();
+                int size = 0;
+                if (get(object, "elements") instanceof ArrayReference array && array.length() > 0) {
+                    int capacity = array.length();
+                    int head = intField(object, "head");
+                    int tail = intField(object, "tail");
+                    size = ((tail - head) % capacity + capacity) % capacity;
+                    for (int offset = 0; offset < size && offset < maxArrayElements; offset++) {
+                        items.add(element(array.getValue((head + offset) % capacity), depth));
+                    }
+                }
+                return snapshot("queue", object, size, items, items.size() == size);
+            }
+
+            /**
+             * The heap array is not sorted. With natural ordering of numbers, characters, strings or booleans
+             * the view is sorted (next out first) without running user code; with a custom comparator or
+             * other element types it stays in heap-array order, whose first element is still the next out.
+             */
+            private CollectionSnapshot priorityQueue(ObjectReference object, int depth) {
+                int size = intField(object, "size");
+                List<MemoryValue> items = new ArrayList<>();
+                boolean complete = readPrefix(get(object, "queue"), size, items, depth);
+                boolean sortable = complete && get(object, "comparator") == null && !items.isEmpty()
+                        && items.stream().allMatch(item -> item.referenceId() == null && NATURAL_ORDER_TYPES.contains(item.type()));
+                if (sortable) items.sort(NaturalOrder::compare);
+                return new CollectionSnapshot("priority-queue", displayName(object), size, List.copyOf(items), List.of(),
+                        List.of(), sortable || items.size() <= 1 ? "priority" : "heap", complete);
+            }
+
+            /** TreeMap / TreeSet (backed by a TreeMap): adds the red-black tree's shape, root first. */
+            private CollectionSnapshot withTree(CollectionSnapshot snapshot, Value map, boolean withValues, int depth) {
+                if (snapshot == null || !(map instanceof ObjectReference tree)
+                        || !tree.referenceType().name().equals("java.util.TreeMap")) return snapshot;
+                List<TreeNodeSnapshot> nodes = new ArrayList<>();
+                java.util.Deque<ObjectReference> pendingNodes = new java.util.ArrayDeque<>();
+                if (get(tree, "root") instanceof ObjectReference root) pendingNodes.add(root);
+                while (!pendingNodes.isEmpty() && nodes.size() < maxArrayElements) {
+                    ObjectReference node = pendingNodes.remove();
+                    Value left = get(node, "left");
+                    Value right = get(node, "right");
+                    boolean black = get(node, "color") instanceof com.sun.jdi.BooleanValue color && color.value();
+                    nodes.add(new TreeNodeSnapshot(Long.toString(node.uniqueID()), element(get(node, "key"), depth),
+                            withValues ? element(get(node, "value"), depth) : null, idOf(left), idOf(right), !black));
+                    if (left instanceof ObjectReference child) pendingNodes.add(child);
+                    if (right instanceof ObjectReference child) pendingNodes.add(child);
+                }
+                return snapshot.withTree(nodes);
+            }
+
+            private CollectionSnapshot setOf(ObjectReference set, Value backingMap, int depth) {
+                if (!(backingMap instanceof ObjectReference map)) return null;
+                RawEntries entries = mapEntries(map);
+                if (entries == null) return null;
+                List<MemoryValue> items = new ArrayList<>();
+                for (Value[] pair : entries.pairs()) items.add(element(pair[0], depth));
+                return snapshot("set", set, entries.size(), items, entries.complete());
+            }
+
+            private CollectionSnapshot mapOf(ObjectReference object, RawEntries raw, int depth) {
+                List<MapEntrySnapshot> entries = new ArrayList<>();
+                for (Value[] pair : raw.pairs()) entries.add(new MapEntrySnapshot(element(pair[0], depth), element(pair[1], depth)));
+                return new CollectionSnapshot("map", displayName(object), raw.size(), List.of(), List.copyOf(entries),
+                        List.of(), null, raw.complete());
+            }
+
+            private record RawEntries(int size, List<Value[]> pairs, boolean complete) {}
+
+            /** Key/value pairs of supported maps in Java's iteration order, or null for other classes. */
+            private RawEntries mapEntries(ObjectReference map) {
+                String name = map.referenceType().name();
+                List<Value[]> pairs = new ArrayList<>();
+                switch (name) {
+                    case "java.util.LinkedHashMap" -> {
+                        Value entry = get(map, "head");
+                        while (entry instanceof ObjectReference current && pairs.size() < maxArrayElements) {
+                            pairs.add(new Value[] {get(current, "key"), get(current, "value")});
+                            entry = get(current, "after");
+                        }
+                        int size = intField(map, "size");
+                        return new RawEntries(size, pairs, pairs.size() == size);
+                    }
+                    case "java.util.HashMap", "java.util.Hashtable", "java.util.concurrent.ConcurrentHashMap" -> {
+                        String valueField = name.endsWith("ConcurrentHashMap") ? "val" : "value";
+                        int found = 0;
+                        if (get(map, "table") instanceof ArrayReference table) {
+                            for (Value bucket : table.getValues()) {
+                                Value node = bucket;
+                                if (node instanceof ObjectReference bin && bin.referenceType().name().endsWith("$TreeBin")) node = get(bin, "first");
+                                while (node instanceof ObjectReference current) {
+                                    if (current.referenceType().name().endsWith("$ForwardingNode")) break;
+                                    found++;
+                                    if (pairs.size() < maxArrayElements) pairs.add(new Value[] {get(current, "key"), get(current, valueField)});
+                                    node = get(current, "next");
+                                }
+                            }
+                        }
+                        int size = name.endsWith("Hashtable") ? intField(map, "count")
+                                : name.endsWith("ConcurrentHashMap") ? found : intField(map, "size");
+                        return new RawEntries(size, pairs, pairs.size() == size);
+                    }
+                    case "java.util.TreeMap" -> {
+                        java.util.Deque<ObjectReference> path = new java.util.ArrayDeque<>();
+                        Value current = get(map, "root");
+                        while ((current instanceof ObjectReference || !path.isEmpty()) && pairs.size() < maxArrayElements) {
+                            while (current instanceof ObjectReference node) {
+                                path.push(node);
+                                current = get(node, "left");
+                            }
+                            ObjectReference node = path.pop();
+                            pairs.add(new Value[] {get(node, "key"), get(node, "value")});
+                            current = get(node, "right");
+                        }
+                        int size = intField(map, "size");
+                        return new RawEntries(size, pairs, pairs.size() == size);
+                    }
+                    case "java.util.ImmutableCollections$Map1" -> {
+                        pairs.add(new Value[] {get(map, "k0"), get(map, "v0")});
+                        return new RawEntries(1, pairs, true);
+                    }
+                    case "java.util.ImmutableCollections$MapN" -> {
+                        if (get(map, "table") instanceof ArrayReference table) {
+                            List<Value> slots = table.getValues();
+                            for (int index = 0; index + 1 < slots.size() && pairs.size() < maxArrayElements; index += 2) {
+                                if (slots.get(index) != null) pairs.add(new Value[] {slots.get(index), slots.get(index + 1)});
+                            }
+                        }
+                        int size = intField(map, "size");
+                        return new RawEntries(size, pairs, pairs.size() == size);
+                    }
+                    default -> {
+                        return null;
+                    }
+                }
+            }
+
+            /** Reads elements [0, size) of an Object[] (up to the element limit); returns false if cut short. */
+            private boolean readPrefix(Value array, int size, List<MemoryValue> items, int depth) {
+                if (!(array instanceof ArrayReference values) || size <= 0) return size <= 0;
+                int available = Math.min(size, values.length());
+                int captured = Math.min(available, maxArrayElements);
+                if (captured > 0) for (Value value : values.getValues(0, captured)) items.add(element(value, depth));
+                return captured == size;
+            }
+
+            private CollectionSnapshot snapshot(String view, ObjectReference object, int size, List<MemoryValue> items, boolean complete) {
+                return new CollectionSnapshot(view, displayName(object), size, List.copyOf(items), List.of(), List.of(), null, complete);
+            }
+
+            /**
+             * Elements as the learner thinks of them: boxed numbers/characters/booleans become plain values
+             * (5, not Integer@123); strings stay strings; other objects become linked heap references.
+             */
+            private MemoryValue element(Value value, int depth) {
+                if (value instanceof ObjectReference object && !(value instanceof StringReference)
+                        && BOXED_TYPES.contains(object.referenceType().name())) {
+                    Value inner = get(object, "value");
+                    if (inner != null) return new MemoryValue(object.referenceType().name(), inner.toString(), null);
+                }
+                return value(value, depth + 1);
+            }
+
+            private Value get(ObjectReference object, String fieldName) {
+                Field field = object.referenceType().fieldByName(fieldName);
+                return field == null ? null : object.getValue(field);
+            }
+
+            private int intField(ObjectReference object, String fieldName) {
+                return get(object, fieldName) instanceof com.sun.jdi.PrimitiveValue number ? number.intValue() : 0;
+            }
+
+            private static String idOf(Value value) {
+                return value instanceof ObjectReference object ? Long.toString(object.uniqueID()) : null;
+            }
+
+            /** ImmutableCollections uses a plain java.lang.Object as the "no second element" marker. */
+            private static boolean isPlaceholder(Value value) {
+                return value instanceof ObjectReference object && object.referenceType().name().equals("java.lang.Object");
+            }
+
+            private static String displayName(ObjectReference object) {
+                String name = object.referenceType().name();
+                if (name.startsWith("java.util.ImmutableCollections$List")) return "List.of";
+                if (name.startsWith("java.util.ImmutableCollections$Set")) return "Set.of";
+                if (name.startsWith("java.util.ImmutableCollections$Map")) return "Map.of";
+                if (name.equals("java.util.Arrays$ArrayList")) return "Arrays.asList";
+                String simple = name.substring(name.lastIndexOf('.') + 1);
+                return simple.substring(simple.lastIndexOf('$') + 1);
             }
 
             private void markTruncated(String reason) {
@@ -604,6 +977,7 @@ public class Tracer {
         }
 
         private static boolean isUserClass(String name) {
+            if (name.contains("$$Lambda")) return false;     // JVM-generated lambda helper, no source lines
             for (String p : EXCLUDED_CLASSES) {
                 if (name.startsWith(p.substring(0, p.length() - 1))) return false;   // "java.*" -> "java."
             }

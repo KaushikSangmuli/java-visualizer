@@ -130,7 +130,7 @@ public class VisualizeService {
                 message = "Trace truncated. Possible infinite loop or too many steps.";
             }
             return new VisualizeResponse(status, message, null,
-                    enricher.enrich(result.steps(), inspection.metadata(), result.truncated()),
+                    enricher.enrich(result.steps(), inspection.metadata(), result.truncated(), code),
                     result.truncated(), result.truncatedReason(), result.exception(), result.stdout(),
                     inspection.metadata(), null);
 

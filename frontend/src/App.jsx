@@ -4,6 +4,7 @@ import { ConsolePanel, FocusedPanel, HeapPanel, LoopStatus, StackPanel } from '.
 import { examples } from './examples.js';
 import { loopAtTraceStep } from './loopAnalysis.js';
 import AuthPanel from './components/AuthPanel.jsx';
+import FloatingPanel from './components/FloatingPanel.jsx';
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 const apiUrl = (path) => `${API_BASE}${path}`;
@@ -77,8 +78,8 @@ export default function App() {
       .finally(() => setAuthLoading(false));
   }, []);
 
-  async function getCsrfToken() {
-    if (csrfToken) return csrfToken;
+  async function getCsrfToken(forceRefresh = false) {
+    if (csrfToken && !forceRefresh) return csrfToken;
     const tokenResponse = await fetch(apiUrl('/api/auth/csrf'), { credentials: 'include' });
     if (!tokenResponse.ok) throw new Error('Could not initialize secure sign-in.');
     const token = (await tokenResponse.json()).token ?? '';
@@ -86,13 +87,21 @@ export default function App() {
     return token;
   }
 
-  async function authRequest(path, payload) {
-    const token = await getCsrfToken();
-    const response = await fetch(apiUrl(path), {
+  // POST with the CSRF header. If the server rejects the security token (403, e.g. the cookie was
+  // replaced after a backend restart), fetch a fresh token and retry once instead of failing.
+  async function securePost(path, payload) {
+    const send = async (token) => fetch(apiUrl(path), {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': token ?? '' },
       body: JSON.stringify(payload),
     });
+    let response = await send(await getCsrfToken());
+    if (response.status === 403) response = await send(await getCsrfToken(true));
+    return response;
+  }
+
+  async function authRequest(path, payload) {
+    const response = await securePost(path, payload);
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.message ?? 'The request could not be completed.');
     return body;
@@ -120,17 +129,17 @@ export default function App() {
     setSelectedObjectId(null);
     setFocusedItem(null);
     try {
-      const result = await fetch(apiUrl('/api/visualize'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': await getCsrfToken() },
-        body: JSON.stringify({ code }),
-      });
-      const body = await result.json();
+      const result = await securePost('/api/visualize', { code });
+      const body = await result.json().catch(() => ({}));
       if (result.status === 401) {
         setAuthUser(null);
         setResponse(null);
         setRequestError('Your sign-in expired. Please sign in again to run the visualizer.');
+        return;
+      }
+      if (!result.ok) {
+        setResponse(null);
+        setRequestError(body.message ?? `The backend returned an error (HTTP ${result.status}). Please try again.`);
         return;
       }
       setResponse(body);
@@ -170,13 +179,22 @@ export default function App() {
   }
 
   const heap = step?.heap ?? null;
+  // Per-step variable/heap deltas; shown under the heap (Full analysis) or under the stack (Normal mode).
+  const stateChanges = step && (((step.variableChanges?.length ?? 0) > 0 || (step.heapChanges?.length ?? 0) > 0) && <details className="state-changes">
+                      <summary>State changes <span>{(step.variableChanges?.length ?? 0) + (step.heapChanges?.length ?? 0)}</span></summary>
+                      {step.variableChanges?.map((change, index) => <div className="state-change-row" key={`var-${index}`}><b>{change.change}</b><code>{change.frame}.{change.name}</code><span>{change.before ?? '—'} → {change.after ?? '—'}</span></div>)}
+                      {step.heapChanges?.map((change, index) => <div className="heap-change-group" key={`heap-${index}`}>
+                        <div className="state-change-row"><b>{change.change}</b><code>{change.className || change.id}</code><span>{change.kind}</span></div>
+                        {change.values?.map((value, valueIndex) => <div className="state-change-detail" key={`${value.name}-${valueIndex}`}><b>{value.change}</b><code>{value.name}</code><span>{value.before ?? '—'} → {value.after ?? '—'}</span></div>)}
+                      </div>)}
+                    </details>);
   const eventClass = step?.event === 'exception' ? 'event-exception' : step?.event === 'call' ? 'event-call' : step?.event === 'return' ? 'event-return' : 'event-step';
 
   if (authLoading) return <div className="auth-loading" role="status">Loading your account…</div>;
   if (!authUser) return <AuthPanel standalone onClose={() => {}} onRequest={authRequest} onLogin={setAuthUser} />;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${step ? 'has-floating-controls' : ''}`}>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Java Visualizer home">
           <span className="brand-mark"><Icon name="code" size={21} /></span>
@@ -242,11 +260,23 @@ export default function App() {
                 <span className="analysis-toggle-track"><i /></span><strong>{fullAnalysis ? 'ON' : 'OFF'}</strong>
               </button>
             </div>
-            <article className="trace-card panel">
+            <div className={`inspect-grid ${fullAnalysis ? '' : 'normal-mode-grid'}`}>
+              <article className="inspect-card panel">
+                <div className="inspect-heading"><div><span className="inspect-kicker">01 / STACK</span><h3>Call stack</h3></div><span className="count-chip">{step?.frames?.length ?? 0} frames</span></div>
+                <div className="inspect-scroll stack-scroll"><StackPanel frames={step?.frames ?? []} heap={heap} fullAnalysis={fullAnalysis} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} onFocus={setFocusedItem} /></div>
+              </article>
+              {fullAnalysis && <article className="inspect-card panel heap-panel">
+                <div className="inspect-heading"><div><span className="inspect-kicker">02 / MEMORY</span><h3>Heap & statics</h3></div><span className="count-chip">{heap?.objects?.length ?? 0} objects</span></div>
+                <div className="inspect-scroll heap-scroll"><HeapPanel heap={heap} frames={step?.frames ?? []} footer={stateChanges && <div className="heap-state-changes">{stateChanges}</div>} selectedId={selectedObjectId} onSelect={setSelectedObjectId} onFocus={setFocusedItem} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /></div>
+              </article>}
+            </div>
+            {!step && <article className="trace-card panel">
+              {/* Execution trace header (title, finished status, step counter) hidden for now: the slider shows progress.
               <div className="panel-heading trace-heading">
                 <div className="panel-title-group"><span className="panel-icon trace-icon"><Icon name="play" size={16} /></span><div><h2>Execution trace</h2><p>{response ? statusCaption : 'Your program, one moment at a time'}</p></div></div>
                 {trace.length > 0 && <span className="step-counter">STEP <b>{currentStepIndex + 1}</b><i>/</i>{trace.length}</span>}
               </div>
+              */}
 
               {!response && !requestError && (
                 <div className="trace-placeholder">
@@ -255,7 +285,7 @@ export default function App() {
                   <p>{busy ? 'Compiling and tracing in the Java backend.' : `Load “${selectedExampleName}” or write your own code, then run it.`}</p>
                 </div>
               )}
-              {requestError && <div className="request-error"><strong>Can’t connect to the visualizer</strong><p>{requestError}</p></div>}
+              {requestError && <div className="request-error"><strong>Could not run the visualizer</strong><p>{requestError}</p></div>}
               {response && response.status === 'compile_error' && (
                 <div className="compile-errors"><div className="error-title"><span>!</span><div><strong>Compilation failed</strong><small>Fix the source and try again.</small></div></div>
                   {(response.errors ?? []).map((error, index) => <div className="compile-error-row" key={`${error.line}-${index}`}><span>Line {error.line}</span><code>{error.message}</code></div>)}
@@ -269,23 +299,21 @@ export default function App() {
               {response && response.status !== 'compile_error' && trace.length === 0 && !requestError && (
                 <div className="request-error"><strong>{response.status?.replaceAll('_', ' ') ?? 'No trace returned'}</strong><p>{response.message ?? 'The backend returned no trace steps.'}</p></div>
               )}
-              {step && (
-                <>
+            </article>}
+
+            {/* Step controls float above the page; the learner can drag them anywhere and they stay there. */}
+            {step && (
+                <FloatingPanel storageKey="java-visualizer.step-controls.position" label="step controls">
+                  {/* Step context hidden for now: event badge, source line, explanation, line type and return value.
+                      The editor highlights the line and call boxes show return values.
                   <div className="step-context">
                     <div className="step-context-top"><span className={`event-badge ${eventClass}`}>{step.event}</span><span className="context-line-label">SOURCE LINE</span><span className="context-line-number">{step.line}</span></div>
                     <pre className="active-source-line"><span>{String(step.line).padStart(2, '0')}</span>{currentSourceLine || 'Source line unavailable'}</pre>
                     {step.explanation && <p className="step-explanation">{step.explanation}</p>}
                     {step.lineType && <span className="line-type-chip">{step.lineType.replaceAll('_', ' ')}</span>}
                     {step.returnValue !== null && step.returnValue !== undefined && <div className="return-value"><span>RETURN VALUE</span><code>{step.returnValue}</code></div>}
-                    {((step.variableChanges?.length ?? 0) > 0 || (step.heapChanges?.length ?? 0) > 0) && <details className="state-changes">
-                      <summary>State changes <span>{(step.variableChanges?.length ?? 0) + (step.heapChanges?.length ?? 0)}</span></summary>
-                      {step.variableChanges?.map((change, index) => <div className="state-change-row" key={`var-${index}`}><b>{change.change}</b><code>{change.frame}.{change.name}</code><span>{change.before ?? '—'} → {change.after ?? '—'}</span></div>)}
-                      {step.heapChanges?.map((change, index) => <div className="heap-change-group" key={`heap-${index}`}>
-                        <div className="state-change-row"><b>{change.change}</b><code>{change.className || change.id}</code><span>{change.kind}</span></div>
-                        {change.values?.map((value, valueIndex) => <div className="state-change-detail" key={`${value.name}-${valueIndex}`}><b>{value.change}</b><code>{value.name}</code><span>{value.before ?? '—'} → {value.after ?? '—'}</span></div>)}
-                      </div>)}
-                    </details>}
                   </div>
+                  */}
                   <div className="step-controls">
                     <button type="button" className="step-icon-button" onClick={() => goToStep(currentStepIndex - 1)} disabled={currentStepIndex === 0} aria-label="Previous step" title="Previous step"><Icon name="back" /></button>
                     <button type="button" className="step-play-button" onClick={() => {
@@ -298,27 +326,20 @@ export default function App() {
                     <div className="timeline-control">
                       {hoveredStepIndex !== null && <span className="timeline-hover-tooltip" style={{ '--hover-progress': `${trace.length > 1 ? (hoveredStepIndex / (trace.length - 1)) * 100 : 0}%` }} role="tooltip">Step {hoveredStepIndex + 1}</span>}
                       <input type="range" min="0" max={Math.max(0, trace.length - 1)} value={currentStepIndex} style={{ '--progress': `${progress}%` }} aria-label="Trace step" title={`Step ${currentStepIndex + 1} of ${trace.length}`} onChange={(event) => { const index = Number(event.target.value); goToStep(index); setHoveredStepIndex(index); }} onMouseMove={(event) => { const bounds = event.currentTarget.getBoundingClientRect(); const fraction = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)); setHoveredStepIndex(Math.round(fraction * Math.max(0, trace.length - 1))); }} onMouseLeave={() => setHoveredStepIndex(null)} onFocus={() => setHoveredStepIndex(currentStepIndex)} onBlur={() => setHoveredStepIndex(null)} />
-                      <div className="timeline-labels"><span>START</span><span>{trace.length ? `${trace.length} EVENTS` : 'NO EVENTS'}</span></div>
+                      <div className="timeline-labels"><span>STEP {currentStepIndex + 1} / {trace.length}</span><span>{trace.length ? `${trace.length} EVENTS` : 'NO EVENTS'}</span></div>
                     </div>
                   </div>
-                </>
-              )}
-            </article>
+                </FloatingPanel>
+            )}
 
+            {!fullAnalysis && stateChanges && <div className="panel normal-state-changes">{stateChanges}</div>}
+
+            {/* Loop status panel hidden: each running loop now has its own box (iteration, condition) inside its stack frame.
             <LoopStatus loop={activeLoop} />
+            */}
 
-            {fullAnalysis && <FocusedPanel focus={focusedItem} heap={heap} onClear={() => setFocusedItem(null)} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />}
+            {(fullAnalysis || focusedItem) && <FocusedPanel focus={focusedItem} heap={heap} trace={trace} stepIndex={currentStepIndex} onClear={() => setFocusedItem(null)} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />}
 
-            <div className={`inspect-grid ${fullAnalysis ? '' : 'normal-mode-grid'}`}>
-              <article className="inspect-card panel">
-                <div className="inspect-heading"><div><span className="inspect-kicker">01 / STACK</span><h3>Call stack</h3></div><span className="count-chip">{step?.frames?.length ?? 0} frames</span></div>
-                <div className="inspect-scroll stack-scroll"><StackPanel frames={step?.frames ?? []} heap={heap} fullAnalysis={fullAnalysis} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} onFocus={setFocusedItem} /></div>
-              </article>
-              {fullAnalysis && <article className="inspect-card panel heap-panel">
-                <div className="inspect-heading"><div><span className="inspect-kicker">02 / MEMORY</span><h3>Heap & statics</h3></div><span className="count-chip">{heap?.objects?.length ?? 0} objects</span></div>
-                <div className="inspect-scroll heap-scroll"><HeapPanel heap={heap} selectedId={selectedObjectId} onSelect={setSelectedObjectId} onFocus={setFocusedItem} onReference={(id) => { setSelectedObjectId(id); document.getElementById(`heap-object-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /></div>
-              </article>}
-            </div>
 
             {response?.truncated && <div className="truncated-banner">Trace paused at a safety limit. The steps captured so far are available above.</div>}
           </div>

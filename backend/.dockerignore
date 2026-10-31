@@ -6,3 +6,5 @@ bin/
 samples/
 documentation/
 README.md
+data/
+*.mv.db

@@ -1,0 +1,36 @@
+if function is calling another function then 
+suppose fun_multi calling fun_add 
+so in this case we are showing fun_add as a new function on stack but i want to also show that call in the fun multi
+so in the block of fun_multi  we will show something like below 
+one rectangle box 
+which have 2 states 
+first step is - after calling fun_add but result is not returned yet 
+show=> result = fun_add(4,2)
+2nd state is after fun_add return the result 
+show => result = 8 <= fun_add(4,2)
+
+if we declare result variable separetely then that box should be different from this one , and that vaeiable will work same like other variables 
+
+public class Main {
+
+    static int fun_add(int a, int b) {
+        return a + b;
+    }
+
+    static int fun_multi(int x, int y) {
+        // the smaller number decides how many times we add
+        int times = Math.min(x, y);
+        int number = Math.max(x, y);
+
+        int result = 0;
+        for (int i = 0; i < times; i++) {
+            result = fun_add(result, number);
+        }
+        return result;
+    }
+
+    public static void main(String[] args) {
+        int a = 4, b = 2;
+        System.out.println(a + " x " + b + " = " + fun_multi(a, b));
+    }
+}

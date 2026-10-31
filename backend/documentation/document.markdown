@@ -21,6 +21,7 @@ A learner selects a sample or enters Java source in the editor and chooses **Run
 - `POST /api/auth/signup` accepts `{ "email", "password" }`; `POST /api/auth/verify-email` accepts `{ "email", "code" }`.
 - `POST /api/auth/login` accepts `{ "email", "password" }` and creates a short-lived HTTP-only JWT cookie; `GET /api/auth/me` returns the signed-in email; `POST /api/auth/logout` clears the cookie.
 - `POST /api/auth/verification-code/resend`, `/api/auth/password-reset/request`, and `/api/auth/password-reset/complete` support verification resend and OTP password recovery. Auth-changing browser calls must send the `X-XSRF-TOKEN` header obtained from the CSRF endpoint.
+- Authenticated `GET /api/runs` returns the signed-in user's run history: `totalRuns`, `successfulRuns`, `failedRuns` and `recentRuns` (20 newest: `createdAt`, `outcome` SUCCESS/FAILED, `status`, `message`, `errorDetail`, `stepCount`, `truncated`, `codeLength`, `durationMs`). Every `POST /api/visualize` by a signed-in user is recorded; the source code itself is not stored.
 - Local `local` and `local-sqlserver` profiles only: signup and password reset use fixed OTP `1234`, without email delivery. Hosted `azure` profile has no fixed OTP and requires Brevo settings and `VISUALIZER_JWT_SECRET`.
 - Authenticated `POST /api/visualize` accepts JSON with a `code` field, for example:
 
@@ -32,6 +33,8 @@ A learner selects a sample or enters Java source in the editor and chooses **Run
 - The defined status values are `ok`, `compile_error`, `runtime_error`, `blocked_api`, `busy`, and `error`. The controller returns the service response for handled visualization outcomes.
 - A trace event contains a zero-based step index, source line, event name, stdout captured up to that event, `frames`, an `explanation`, `returnValue` where applicable, and a bounded `heap` snapshot. Each frame contains a method/class/return type/source line and visible variables; frames are ordered active method first, then callers. Heap values use `referenceId` to link frame/static/field/array references to identity-deduplicated heap objects.
 - Successful responses also contain JavaParser-derived `metadata` (methods, loops, branches); trace events expose `lineType`, `variableChanges`, and `heapChanges` with object-field/array-index before-and-after values, ending with an `end` event. Blocked source includes `blockedApis` with API names, reasons, and source lines.
+- Heap objects for recognised `java.util` collections carry `collection` instead of raw fields: `view` (`list`, `linked-list`, `stack`, `queue`, `priority-queue`, `set`, `map`), `typeName` (e.g. `ArrayList`, `List.of`), `size`, `items` (elements in display order: index order, stack top first, queue front first, priority-queue next-out first, set iteration order), `entries` (`key`/`value` pairs for maps), `nodes` (linked-list nodes with `id`, `prevId`, `value`, `nextId`), `order` (`priority` or `heap` for priority queues), `complete`, and `tree` (TreeMap/TreeSet only: red-black nodes breadth-first, root first, each with `id`, `key`, `value` (maps), `leftId`, `rightId`, `red`). Boxed numbers/characters/booleans are plain values; other objects stay `referenceId` links.
+- Each frame also has `calls` and `loops`. `calls` lists calls the frame made on its current line to user-written methods/constructors: `line`, `expression` (values, e.g. `result = fun_add(0, 4)` or after return `result = 4 <= fun_add(0, 4)`), `state` (`evaluating`/`returned`), `returnValue`, and `sourceExpression` (as written, e.g. `result = fun_add(result, number)`). `loops` lists the loops the frame is running, nested inner-inside-outer: `kind`, `startLine`, `endLine`, `headerLine`, `condition`, `conditionValues` (e.g. `2 < 4`, for-each `2 of 5`), `conditionResult` (true/false only while the condition is checked), `iteration` (0 before the body first runs), `activationStep` (identifies one run of the loop), `variables` (names declared by the loop), and nested `loops`.
 
 ### Current planned scope
 
@@ -50,12 +53,14 @@ A learner selects a sample or enters Java source in the editor and chooses **Run
 - Enrich trace events with source line types, loop/branch explanations, variable and heap changes, and a final end event.
 - Bound concurrent traces and per-client request rates, configure CORS, run as a non-root container user, and document container restrictions.
 - Cover parsing, source handling, metadata, enrichment, and representative API integration scenarios with JUnit 5.
+- Attach function-call rows to caller frames: every waiting caller keeps its row, returned rows stay until the caller leaves the line, nested/repeated calls on one line are listed in evaluation order, constructors show the created object, and library calls are ignored.
+- Attach running loops to frames with iteration number, condition values and verdict, loop-declared variables and nesting; variable-change keys number frames from `main` so calls do not report outer variables as changed.
 
 The Striver’s DSA sheet, premium company-wise lists, and LeetCode question browser are future product scope recorded in the plan and are not part of this implementation request.
 
 ### Product limitations and safety
 
-The trace provides source-line events, stack/variable snapshots, method boundaries, return values, bounded heap graphs, user-class static fields, source classifications, and state deltas. Account signup/login uses email OTP, BCrypt password hashes, short-lived JWT cookies, CSRF protection, and configurable CORS. The local profile uses the fixed OTP `1234` only to unblock development without email; never activate the local profile for a hosted deployment. The API blocklist, timeout, process limits, request limiting, CORS, and non-root container are defense in depth and do not make arbitrary Java execution safe. Deploy only with an OS/container security policy that restricts network access, CPU, memory, process count, and writable paths; use trusted code during development.
+The trace provides source-line events, stack/variable snapshots, method boundaries, return values, bounded heap graphs, user-class static fields, source classifications, and state deltas. Account signup/login uses email OTP, BCrypt password hashes, short-lived JWT cookies, CSRF protection, and configurable CORS. The local profile uses the fixed OTP `1234` only to unblock development without email; never activate the local profile for a hosted deployment. User programs run in a child JVM started with the Java Security Manager and a per-run policy (`sandbox.policy` next to the compiled classes): they may read only their own classes and a short list of harmless system properties — no environment variables (database password, JWT secret and Brevo key live there), no other files, no network, no processes, no reflection on private members. The AST blocklist (including `getenv` and method references) rejects obvious misuse first; timeouts, step/output limits, per-user rate limits, a concurrency cap and a non-root container bound resource use. CPU/memory are not isolated per user within one replica, so a public deployment should start as a private beta.
 
 ## 2. Technical Flow and Configuration
 
@@ -78,8 +83,9 @@ The trace provides source-line events, stack/variable snapshots, method boundari
 6. `Tracer.trace` launches the compiled main class with the JDI `CommandLineLaunch` connector. The user program runs in a separate JVM with bounded heap/stack settings, suspended startup, closed standard input, and stdout/stderr drains.
 7. JDI class-prepare handling installs a breakpoint at the main method. The tracer records the first breakpoint as a `call` step, then recreates count-filtered line-step requests. Method entry/exit requests capture user method boundaries; exit return values are mirrored through JDI when supported. At each event, the tracer reads up to 50 user frames and their visible variables while the debuggee is suspended. It walks reachable object fields/array elements and static fields declared by loaded user classes using JDI mirrors, deduplicating by object identity to preserve aliases/cycles. It does not invoke debuggee methods.
 8. Uncaught exceptions are reported using debuggee frame information and the exception's stored message field. When execution ends or a configured limit is reached, the tracer stops the debuggee as needed and returns its trace/result.
-9. `TraceEnricher.enrich` adds source line classifications, approximate loop/branch explanations, consecutive variable and heap deltas, and a final `end` event. The service always removes temporary files and releases its admission permit in `finally`.
-10. Auth endpoints create accounts and persist hashed one-time verification/reset challenges. The local profile stores a BCrypt hash of the fixed `1234` code and skips email delivery; other profiles generate random six-digit codes and send them through Brevo. Login authenticates verified accounts with BCrypt and issues a signed HS256 JWT in an HTTP-only cookie. A JWT cookie filter restores request authentication; Spring Security is stateless, CSRF remains enabled for cookie-authenticated mutations and accepts the plain token fetched by the frontend, and visualization requests require a valid JWT. Login attempts and challenge retries are bounded. Password reset does not revoke already issued JWTs; they expire within 30 minutes.
+9. `TraceEnricher.enrich` first runs `FunctionCallTracker` (call sites from `CallSiteAnalyzer`) and `LoopTracker` (loop sites from `LoopSiteAnalyzer`) over the raw steps in order, then adds source line classifications, approximate loop/branch explanations, consecutive variable and heap deltas, and a final `end` event. The service always removes temporary files and releases its admission permit in `finally`.
+10. After each visualization, `VisualizeController` passes the response to `RunHistoryService.record`, which looks up the signed-in account and saves a `visualization_run` row (`RunOutcome.from` decides SUCCESS/FAILED and builds the failure reason: compiler errors line by line, exception type/line/message, blocked APIs, trace limit, or the busy/error message). Recording failures are logged and never break the visualization response. `GET /api/runs` reads only the caller's rows.
+11. Auth endpoints create accounts and persist hashed one-time verification/reset challenges. The local profile stores a BCrypt hash of the fixed `1234` code and skips email delivery; other profiles generate random six-digit codes and send them through Brevo. Login authenticates verified accounts with BCrypt and issues a signed HS256 JWT in an HTTP-only cookie. A JWT cookie filter restores request authentication; Spring Security is stateless, CSRF remains enabled for cookie-authenticated mutations and accepts the plain token fetched by the frontend, and visualization requests require a valid JWT. Login attempts and challenge retries are bounded. Password reset does not revoke already issued JWTs; they expire within 30 minutes.
 
 ### Project layout
 
@@ -110,7 +116,7 @@ Java package names map to real nested directories such as `backend/src/main/java
 - JDK 21 is the intended runtime/compiler installation; Java source and target bytecode are configured for Java 17.
 - `maven.compiler.release` remains intentionally empty; `maven.compiler.source` and `maven.compiler.target` are `17`, preserving access to JDI APIs from the full JDK during compilation.
 - Compilation uses `javax.tools.JavaCompiler` with `-g`, `-encoding UTF-8`, `-proc:none`, `--release 17`, and `-d <classesDir>`.
-- JDI is provided by the JDK's `jdk.jdi` module. The debuggee runs separately with `-Xmx128m`, `-Xss1m`, UTF-8 encoding properties, and a classpath pointing at compiled temporary classes.
+- JDI is provided by the JDK's `jdk.jdi` module. The debuggee runs separately with `-Xmx128m`, `-Xss1m`, UTF-8 encoding properties, and a classpath pointing at compiled temporary classes. Since 2026-10-31 it also runs with `-Djava.security.manager=default -Djava.security.policy==<run folder>/sandbox.policy`, a per-run policy allowing only reads of its own classes and a few safe system properties (JDK 21 required; the Security Manager was removed in JDK 24).
 - Run Maven commands from `backend/`: `mvn -q clean compile` and `mvn spring-boot:run`.
 - The frontend uses React 19 and Vite 8. Run `npm install` and `npm run dev` from `frontend/`; Node.js 20.19+ is required by the selected Vite version. The Vite development proxy forwards `/api` and `/health` to port 8080.
 
@@ -134,13 +140,18 @@ Java package names map to real nested directories such as `backend/src/main/java
 | `visualizer.cors.allowed-origins` | local Vite origins | Comma-separated browser origins allowed by CORS |
 | `visualizer.auth.login-max-failures` | `10` | Login failures allowed before a client is throttled |
 | `visualizer.auth.login-window-ms` | `900000` | Login failure throttle window |
-| `visualizer.auth.jwt-ttl-seconds` | `1800` | JWT cookie lifetime |
+| `visualizer.auth.jwt-ttl-seconds` | `1800` | JWT cookie lifetime; renewed on any authenticated request once half of it has passed, so only 30 minutes of inactivity signs a user out |
+| `visualizer.auth.allowed-signup-emails` | empty (everyone) | Optional beta gate (`ALLOWED_SIGNUP_EMAILS`): comma-separated emails or `@domains` allowed to create accounts; others get 403 before any account or email is created |
+| `visualizer.auth.max-session-hours` | `12` | Hard limit for renewal: a session is never renewed beyond this many hours after the password login |
 | `visualizer.auth.cookie-secure` | local `false`, hosted `true` | Requires HTTPS when enabled |
-| `visualizer.auth.cookie-same-site` | local `Lax`, hosted `None` | Browser cookie cross-site policy |
+| `visualizer.auth.cookie-same-site` | local `Lax`, hosted `None` | Browser cookie cross-site policy (auth and CSRF cookies) |
+| `visualizer.trust-forwarded-for` | local `false`, hosted `true` | Use the last `X-Forwarded-For` entry (appended by the Container Apps ingress) as the client address for login throttling |
 
 Local database defaults to file-backed H2 under `backend/data/` with the `local` default profile. The H2 URL uses compatibility mode `MSSQLServer` (H2's exact mode name). `local` and `local-sqlserver` accept OTP `1234`; the latter uses SQL Server migrations and `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD`. Local profiles generate an ephemeral JWT signing key at startup, so local JWTs become invalid after a backend restart. Use `SPRING_PROFILES_ACTIVE=azure` with database variables and a strong `VISUALIZER_JWT_SECRET` (minimum 32 UTF-8 bytes) for Azure SQL. OTP mail uses `VISUALIZER_BREVO_API_KEY`, `VISUALIZER_EMAIL_SENDER`, and optional `VISUALIZER_EMAIL_SENDER_NAME`. Configure `CORS_ALLOWED_ORIGINS` with exact frontend origins. For hosted HTTPS, keep `AUTH_COOKIE_SECURE=true`; use `AUTH_COOKIE_SAME_SITE=None` only when frontend and backend are on different sites, otherwise `Lax` is preferred. The frontend build accepts `VITE_API_BASE_URL` for the backend origin.
 
 ### Verification state
+
+**Status as of 2026-10-31:** Stages 1–8 implemented; function-call boxes and loop boxes implemented on branch `feature/function-box-implementation`. The new call/loop code was compiled with JDK 21 against JavaParser 3.17 and run with the real `Tracer` on several programs outside Spring; its JUnit tests passed under a stand-in runner. `mvn clean verify` with the project's real dependencies is still pending on the developer machine.
 
 Phase-two authentication code is present but has not been built or exercised in this turn. Local development uses a persistent H2 database under ignored `backend/data/`; deploy with the `azure` Spring profile to use Azure SQL. The local OTP bypass is unavailable in the `azure` profile. See `backend/README.md` for environment variables and auth endpoints.
 
@@ -351,3 +362,136 @@ The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it h
 - Backend and frontend `document.markdown` / `plan.markdown` files — updated current technical scope and recorded this change.
 
 **Verification:** The updated frontend production build passed with Vite 8.3.4 (20 modules transformed). Backend Maven tests remain unrun because Maven is unavailable in this coding shell.
+
+### 2026-10-31 — Function call boxes in caller frames
+
+**Technical analysis:** Completed the function-call box started on 2026-10-25. Each frame in a trace event now has a `calls` list describing calls it made on its current line to user-written methods and constructors. A row is `evaluating` while the callee runs and `returned` (with its result) after the callee exits; it stays until the caller moves to another line. Every waiting caller in the stack keeps its row, so `main` still shows `fun_multi(4, 2)` while `fun_add` runs. Several calls on one line (for example `add(add(1, 2), 3)`) are listed in Java evaluation order and matched by source position, so repeated method names resolve correctly; a call on a line that runs again (one-line loop) replaces the previous row. Rows show argument values (`result = fun_add(0, 4)`, after return `result = 4 <= fun_add(0, 4)`) plus the source form (`result = fun_add(result, number)`). A receiving variable or `return` is shown only when the call is the whole assigned/returned value. Constructors show the created object (`n = Node@42 <= new Node(5)`). Library methods (`Math.max`, `println`) never create a user frame and therefore never get a row. Calls inside lambdas and field/static initializers are not attributed. Rows are tracked by stack depth from `main`; when recursion exceeds the 50 displayed frames, rows for the cut-off frames may be dropped.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/FunctionCallSnapshot.java` — `line`, `expression`, `state`, `returnValue`, `sourceExpression`.
+- `src/main/java/com/example/demo/model/FrameSnapshot.java` — `calls` list with a compatibility constructor.
+- `src/main/java/com/example/demo/service/CallSiteAnalyzer.java` — `analyze` lists method calls and object creations in post-order (evaluation order) with caller method/class, called method/class, display name, source text and `target`; `caller` skips lambdas/initializers; `target` only for direct assignment/declaration/return values.
+- `src/main/java/com/example/demo/service/FunctionCallTracker.java` — new; `apply`, `onCall`, `onReturn`, `dropFinishedGroups`, `withCalls` keep per-depth call rows across steps.
+- `src/main/java/com/example/demo/service/TraceEnricher.java` — `enrich(raw, metadata, truncated, source)` runs the tracker; the earlier single-frame `withFunctionCall` helper was removed.
+- `src/main/java/com/example/demo/service/VisualizeService.java` — passes the submitted source to the enricher.
+- `src/test/java/com/example/demo/service/FunctionCallTrackerTest.java` — evaluation order/targets, waiting callers, returned-state lifetime, nested calls, repeated line, constructor, quoted String/char arguments, void calls.
+- `samples/FunMulti.java` and `samples/fun_multi.json` — nested-call sample.
+
+**Verification:** Maven Central is blocked in the coding environment, so `mvn verify` was not run. The changed classes compiled with JDK 21 against a local JavaParser 3.17 jar (the project uses 3.26.3), and the real `Tracer` + `TraceEnricher` were run outside Spring on `FunMulti` and on a program covering recursion (`fact`), `add(add(1, 2), 3)`, `new Node(5)`, `n.twice()`, a void method with String/char arguments and a one-line loop; all rows matched the expected behaviour. The seven new test methods passed under a minimal JUnit stand-in. Run `mvn clean verify` locally to confirm with the real dependencies.
+
+### 2026-10-31 — Stable frame keys for variable changes
+
+**Technical analysis:** `TraceEnricher.variables` keyed frames by their position from the top of the stack, so every method call or return shifted all existing frames and reported each of their variables as added/out of scope (a single `fun_add` call produced 20 changes). Frames are now numbered from the bottom (`main` = 0), so only the new or removed frame's variables are reported.
+
+**Files and methods changed:** `src/main/java/com/example/demo/service/TraceEnricher.java` — `variables`.
+
+**Verification:** Real FunMulti trace now reports 2 added variables on the `fun_add` call, 2 out-of-scope on return, and `result` changed afterwards. The function-call tests still pass under the stand-in runner; run `mvn clean verify` locally.
+
+### 2026-10-31 — Loop boxes in stack frames
+
+**Technical analysis:** Each frame now carries a `loops` list describing the loops it is running, nested inner-inside-outer. `LoopSiteAnalyzer` uses JavaParser to find `for`, for-each, `while` and `do-while` loops with their condition, header/condition and body lines, and the variables each loop declares (header plus body, excluding variables owned by a nested loop, lambda or class). `LoopTracker` walks the trace per frame depth: an iteration starts when the frame's line enters the body from outside it, a run of a loop ends when the frame leaves its lines (a later re-entry, e.g. an inner loop on the next outer iteration, is a new run with a new `activationStep`), and the condition is reported with current values (`i < times` → `2 < 4`, `arr.length` resolved from the heap) plus a true/false verdict on steps where the condition is being checked, decided by where the frame goes next. For-each loops report `n of total` for arrays and collections exposing a `size` field. Caller frames keep their loop state while a callee runs. Approximations: a loop whose body is on the header line counts iterations by header visits; conditions that call methods (`list.size()`) are shown with only their variables replaced.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/LoopSnapshot.java` — new loop record (kind, lines, condition, values, result, iteration, activationStep, variables, nested loops).
+- `src/main/java/com/example/demo/model/FrameSnapshot.java` — `loops` component with compatibility constructors.
+- `src/main/java/com/example/demo/service/LoopSiteAnalyzer.java` — new; `analyze`, `add`, `bodyLines`, `owner`.
+- `src/main/java/com/example/demo/service/LoopTracker.java` — new; `apply`, `advance`, `conditionResult`, `snapshot`, `withValues`, `iterableSize`.
+- `src/main/java/com/example/demo/service/CallSiteAnalyzer.java` — `caller` shared with the loop analyzer.
+- `src/main/java/com/example/demo/service/TraceEnricher.java` — runs `LoopTracker` after `FunctionCallTracker`.
+- `src/test/java/com/example/demo/service/LoopTrackerTest.java` — loop kinds/conditions/variables, nested iterations, condition verdicts, new inner runs, loop removal, caller loops during a call.
+
+**Verification:** Compiled with JDK 21 against a local JavaParser 3.17 jar and run with the real `Tracer` on a program covering nested `for` loops with a call in the inner loop, `while`, `do-while`, for-each over an array and an `ArrayList`; iterations, condition values/verdicts, nesting and ownership matched expectations. The three new tests plus the seven function-call tests passed under a minimal JUnit stand-in. Run `mvn clean verify` locally.
+
+### 2026-10-31 — Store run history per user
+
+**Technical analysis:** The database previously held only accounts (`app_user`) and OTP challenges (`verification_challenge`); the `SPRING_SESSION` tables from migration V2 are unused leftovers. Added `visualization_run` (migration V3 for H2 and SQL Server): one row per **Run & visualize** by a signed-in user with time, outcome (`SUCCESS` only when the program finished without exception or trace limit, otherwise `FAILED`), API status, message, failure reason (`error_detail`: compiler errors line by line, `Type at line N: message` for exceptions, blocked API lines, trace limit reason, or busy/error message), step count, truncation flag, code length and duration. Source code is not stored (plan's data-minimization rule). Rows reference `app_user` with `ON DELETE CASCADE` and are indexed by user and time. `GET /api/runs` returns the caller's totals and 20 newest runs; queries are always scoped to the caller's user id. The integration test had not been updated for authentication (it posted anonymously and would get 401); it now signs in with `spring-security-test`, sends CSRF, runs against an in-memory H2 database, and verifies anonymous rejection, run counting and per-user isolation.
+
+**Files and methods changed:**
+
+- `src/main/resources/db/migration/h2/V3__create_visualization_run.sql`, `src/main/resources/db/migration/sqlserver/V3__create_visualization_run.sql` — new table and index.
+- `src/main/java/com/example/demo/model/run/VisualizationRun.java` — new entity.
+- `src/main/java/com/example/demo/repository/run/VisualizationRunRepository.java` — `countByUserId`, `countByUserIdAndOutcome`, `findTop20ByUserIdOrderByCreatedAtDesc`.
+- `src/main/java/com/example/demo/service/run/RunOutcome.java` — `from` (outcome, status, message, error detail, length limits).
+- `src/main/java/com/example/demo/service/run/RunHistoryService.java` — `record`, `summary`, `RunSummary`, `RunView`.
+- `src/main/java/com/example/demo/controller/RunHistoryController.java` — `GET /api/runs`.
+- `src/main/java/com/example/demo/controller/VisualizeController.java` — `visualize` times the run and records it for the signed-in user.
+- `pom.xml` — `spring-security-test` (test scope).
+- `src/test/java/com/example/demo/service/run/RunOutcomeTest.java` — new; `src/test/java/com/example/demo/integration/VisualizerIntegrationTest.java` — signed-in requests, CSRF, in-memory H2, run history checks.
+
+**Verification:** `RunOutcome` and its five tests compiled and passed with JDK 21 (stand-in JUnit runner). The entity, repository, service and controllers were type-checked with JDK 21 against minimal stand-ins for the Spring/JPA types; they have not been compiled against real Spring, and the migrations have not been run. Run `mvn clean verify` (runs the H2 migration and the integration test) and restart the backend; Flyway applies V3 to the existing local database automatically. SQL Server/Azure SQL migration and Hibernate schema validation remain unverified.
+
+### 2026-10-31 — Deployment readiness: user-code sandbox, proxy-aware limits, cross-site CSRF, schema cleanup
+
+**Technical analysis:** A repository review before deployment found: (1) user programs inherited the backend's environment, so `System.getenv("DB_PASSWORD")` would print hosted secrets, and the blocklist missed `getenv`, method references (`System::exit`) and fully qualified file APIs; (2) behind Azure's ingress every request has the proxy's address, so per-client rate limits and login throttling would treat all users as one; (3) the CSRF cookie used the browser default `SameSite=Lax`, so with frontend and backend on different sites every signup/login POST would fail CSRF validation; (4) Hibernate `validate` against SQL Server could reject the `NVARCHAR`/`DATETIME2` columns at startup; (5) the Docker image's non-root user could not create the H2 `data` folder; (6) `SPRING_SESSION` tables from V2 were unused. Fixes: the tracer launches the user JVM with `-Djava.security.manager=default -Djava.security.policy==<per-run policy>` (read own classes and safe properties only); the blocklist adds `getenv` and checks method references; `ClientAddress` uses the ingress-appended `X-Forwarded-For` entry when `visualizer.trust-forwarded-for=true` (azure); visualization rate limits are keyed by the signed-in account; the CSRF cookie follows `cookie-secure`/`cookie-same-site`; SQL Server profiles use `ddl-auto=none` (Flyway remains the schema source; H2 tests still validate); Hikari waits up to 60 s for a resuming free-tier database; Flyway V4 drops the Spring Session tables; the Dockerfile caches dependencies, creates a writable `/app/data`, and passes JVM memory flags on the command line so user JVMs do not inherit them. JVM-generated lambda helper classes are no longer shown as `call` frames at line -1.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/tracer/Tracer.java` — `Run.launch` adds the Security Manager options; new `writeSandboxPolicy` and `SANDBOX_READABLE_PROPERTIES`; `isUserClass`, `onMethodEntry`, `onMethodExit` skip `$$Lambda` helpers.
+- `src/main/java/com/example/demo/service/CodeInspector.java` — `inspectCalls` checks method references; new `blockedReason` adds `getenv`.
+- `src/main/java/com/example/demo/config/ClientAddress.java` — new; `of`.
+- `src/main/java/com/example/demo/controller/VisualizeController.java` — per-account rate-limit key; `controller/auth/AuthController.java` — `login` uses `ClientAddress`.
+- `src/main/java/com/example/demo/config/SecurityConfiguration.java` — `securityFilterChain` customizes the CSRF cookie.
+- `src/main/resources/application-azure.properties`, `application-local-sqlserver.properties`, `application.properties` — hosted settings, `ddl-auto=none` for SQL Server, removed stale session comment.
+- `src/main/resources/db/migration/{h2,sqlserver}/V4__drop_unused_session_tables.sql` — new.
+- `Dockerfile`, `.dockerignore`, `README.md` — image and run instructions; `src/test/java/com/example/demo/service/CodeInspectorTest.java` — `blocksEnvironmentAccessAndMethodReferences`.
+
+**Verification:** The modified tracer was compiled with JDK 21 and run outside Spring: a hostile program's `getenv`, file read, `user.home`, socket and `exec` attempts were all denied while ordinary code ran; FunMulti, recursion/constructor/loop programs and all five frontend examples produced the same output and step counts as before, including heap objects, statics and collections. `System.exit` is still permitted by the JDK for application code (it only ends the user's own JVM; direct calls are blocklisted). The inspector change was run against JavaParser 3.17. `ClientAddress` and the controllers were type-checked against stand-ins. Not verified here: `mvn clean verify` with the new test, the Docker build (first real build will run in GitHub Actions), and anything on Azure.
+
+### 2026-10-31 — Verification status refresh
+
+**Technical analysis:** The project owner ran `mvn clean verify` successfully (4 warnings, not yet reviewed) on commit `5590aa3`, which covers the function-call boxes, loop boxes, stable change keys, run history (H2 migration V3 and the authenticated integration test), and checked the UI in the browser after rebuilding the project in Eclipse. Statuses in this document's plan, the root plan and the README were updated from "pending" to verified accordingly. The deployment-readiness commit `1c08d1d` (sandbox, V4, CSRF cookie, CI/CD) is newer and has not been built by Maven yet.
+
+**Files changed:** `documentation/plan.markdown`, this document (runtime description now mentions the Security Manager options), root `plan.markdown`, `README.md`, `../docs/DEPLOYMENT.md` ("How things run automatically").
+
+**Verification:** Documentation-only change; verification facts come from the owner's report.
+
+### 2026-11-01 — Fix false "Authentication required" logouts; sliding login session
+
+**Technical analysis:** The owner was sent back to the login page after running custom code, and the following login answered "Authentication required." Cause of the misleading message: Spring Boot forwards every error response (403, 500) to `/error`, and `/error` required authentication, so any failure — a rejected CSRF token, an exception — was rewritten into 401 "Authentication required", which the frontend treats as an expired session. Contributing cause: the JWT cookie expired a fixed 30 minutes after login even during active use, so a long editing session ended in a real 401. Fixes: `/error` is permitted, so the real status reaches the client; CSRF/access-denied failures return JSON 403 `{"message":"Security token expired. Please try again.","code":"csrf"}`; the JWT cookie is re-issued on any authenticated request once less than half of its lifetime remains (sliding session, still 30 minutes of inactivity). The frontend retries once with a fresh CSRF token on 403 and no longer signs the user out on non-401 errors (see the frontend document).
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/config/SecurityConfiguration.java` — `securityFilterChain` permits `/error`, adds a JSON `accessDeniedHandler`, passes `JwtTokenService` to the cookie filter.
+- `src/main/java/com/example/demo/config/JwtCookieAuthenticationFilter.java` — constructor takes `JwtTokenService`; `doFilterInternal` calls `renewIfHalfExpired`.
+- `src/main/java/com/example/demo/service/auth/JwtTokenService.java` — new `renewIfHalfExpired`.
+
+**Verification:** Not compiled here (needs the Spring dependencies); the changes use standard Spring Security 6.2 APIs. The frontend half was tested in headless Chromium against a mock backend. Pending: owner pulls, runs `mvn clean verify`, restarts the backend and repeats the custom-code run and login; if a failure remains, the backend console now shows its real cause.
+
+### 2026-11-01 — Security review of the login fix; 12-hour session cap
+
+**Technical analysis:** Reviewed the 2026-11-01 login fix for authentication bypass. Permitting `/error` does not bypass anything: authorization is enforced on the original request before any controller runs, and `/error` only renders status/error name (Spring Boot defaults exclude message and stack trace). The JSON 403 only changes the CSRF failure format; CSRF is still enforced. The frontend retry still needs a header matching the CSRF cookie, and other sites cannot read the token (CORS). One real trade-off was found: the sliding session let a stolen cookie be kept alive indefinitely. Fixed with a `login_at` claim (epoch seconds of the password login) copied unchanged into renewed tokens; renewal stops `visualizer.auth.max-session-hours` (12) after login, and tokens without the claim (issued before this change) are not renewed. Renewal still only happens after the decoder has verified the signature and expiry. Password reset still does not revoke existing tokens (they expire within 30 minutes without renewal beyond the cap) — unchanged known limitation.
+
+**Files and methods changed:** `src/main/java/com/example/demo/service/auth/JwtTokenService.java` — `LOGIN_AT_CLAIM`, `writeAuthCookie` (login time), `renewIfHalfExpired` (cap, legacy tokens); `src/main/resources/application.properties` — `visualizer.auth.max-session-hours`; `src/test/java/com/example/demo/service/auth/JwtTokenServiceTest.java` — new (login claim, fresh token not renewed, half-used renewed keeping login time, over-12-hours not renewed, legacy token not renewed).
+
+**Verification:** Not compiled here (Spring dependencies unavailable). The five new tests run in the owner's `mvn clean verify`.
+
+### 2026-11-01 — DSA views for Java collections
+
+**Technical analysis:** Collections used to appear as their JDK internals (`elementData`, spare capacity, `modCount`, hash `Node` chains, `Integer` objects), which also filled the 500-object heap limit. The tracer now recognises common `java.util` collections and records only what a learner needs, read through JDI field mirrors without calling any collection method: `ArrayList`, `Vector`, `CopyOnWriteArrayList`, `Arrays.asList`, `List.of` → list; `Stack` → stack (top first); `LinkedList` → linked list with each node's address and prev/next addresses; `ArrayDeque` → queue (head to tail of the circular array); `PriorityQueue` → priority queue, sorted next-out first for natural ordering of numbers/characters/strings/booleans, otherwise heap-array order (its first element is still the next out; a custom comparator cannot be applied without running user code); `HashSet`/`LinkedHashSet`/`TreeSet`/`Set.of` → set; `HashMap`/`Hashtable`/`ConcurrentHashMap` (bucket order, i.e. Java's iteration order), `LinkedHashMap` (insertion order), `TreeMap` (sorted, in-order walk), `Map.of` → map; `Collections.unmodifiable*`/`synchronized*` wrappers show the wrapped collection marked read-only/synchronized. Elements are capped at `visualizer.max-array-elements` (100) with `complete=false`. `CollectionUsageAnalyzer` (JavaParser) and `CollectionViewResolver` choose stack vs queue for double-ended collections from the source: `push`/`pop` on a variable or field → stack (front = top), `offer`/`poll` or a `Queue` type → queue; a plain `LinkedList` stays a linked list. State changes for collections report `size`, positions (`[i]`) and `key k` values; loop boxes use the collection size for for-each progress. Unrecognised `java.util` classes keep the raw field view.
+
+**Files and methods changed:**
+
+- `src/main/java/com/example/demo/model/CollectionSnapshot.java`, `MapEntrySnapshot.java`, `LinkedNodeSnapshot.java` — new; `HeapObjectSnapshot.java` — `collection` component with compatibility constructor.
+- `src/main/java/com/example/demo/tracer/Tracer.java` — `HeapBuilder.expand` uses `readCollection`; new `wrapped`, `list`, `stack`, `wholeArray`, `pair`, `sparseSet`, `linkedList`, `arrayDeque`, `priorityQueue`, `setOf`, `mapOf`, `mapEntries`, `readPrefix`, `element` (unboxing), `displayName`, `NaturalOrder`.
+- `src/main/java/com/example/demo/service/CollectionUsageAnalyzer.java`, `CollectionViewResolver.java` — new; `TraceEnricher.java` — runs the resolver, `objectValues` includes collection content; `LoopTracker.java` — `iterableSize` uses collection size.
+- `src/test/java/com/example/demo/service/CollectionUsageAnalyzerTest.java` — new; `src/test/java/com/example/demo/integration/VisualizerIntegrationTest.java` — `collectionsShowOnlyTheirElementsSizeAndDsaShape`.
+
+**Verification:** The tracer was compiled with JDK 21 and run outside Spring on a program with 15 collection variables (all views, boxed values, references to user objects, custom-comparator priority queue, `List.of`/`Map.of`): every view matched Java's own contents and the heap fell to 18 objects; the frontend "Collections" example's trace matches its `System.out` line. The integration test's expectations were checked against the real tracer output. `CollectionUsageAnalyzerTest` (2), `FunctionCallTrackerTest` (7) and `LoopTrackerTest` (3) pass under the stand-in runner; all five earlier examples produce the same output and step counts. `mvn clean verify` with the real Spring/JUnit stack is pending on the owner's machine.
+
+### 2026-11-01 — Tree shape for TreeMap and TreeSet
+
+**Technical analysis:** So that TreeMap/TreeSet can be drawn as a real tree, their collection view now also carries `tree`: the red-black nodes collected breadth-first from `root` (up to the element limit), each with its address, key (and value for maps, omitted for sets), left/right child addresses and colour (`red`). Sorted `entries`/`items` are unchanged. User-written binary trees need no backend change: their objects already carry `left`/`right` references, and the frontend recognises them.
+
+**Files and methods changed:** `src/main/java/com/example/demo/model/TreeNodeSnapshot.java` — new; `model/CollectionSnapshot.java` — `tree` component, compatibility constructor, `withTree`; `tracer/Tracer.java` — `readCollection` and `wrapped` keep the tree, new `withTree` (breadth-first walk); `src/test/java/com/example/demo/integration/VisualizerIntegrationTest.java` — TreeSet tree assertions.
+
+**Verification:** Real tracer outside Spring: `TreeMap` {mia, al, zoe, bo} and `TreeSet` {5, 1, 9, 3, 7} produced the expected red-black shapes and colours; the integration-test expectation (root 5 black, children 1 and 9) matched real output. `mvn clean verify` pending.
+
+### 2026-11-01 — Azure SQL time mapping and optional signup allowlist
+
+**Technical analysis:** (1) The SQL Server migrations store times in `DATETIME2`, while Hibernate 6 binds `java.time.Instant` as `TIMESTAMP_UTC` (SQL Server `datetimeoffset`) by default, which the driver may fail to read back from `DATETIME2`; locally H2 hides this. The `azure` and `local-sqlserver` profiles now set `hibernate.type.preferred_instant_jdbc_type=TIMESTAMP` and `hibernate.jdbc.time_zone=UTC`, and the image starts the JVM with `-Duser.timezone=UTC`. (2) Optional signup allowlist (`visualizer.auth.allowed-signup-emails`, env `ALLOWED_SIGNUP_EMAILS`): empty by default, so signup stays open to everyone, as the owner decided. When set, `AuthService.signup` rejects addresses outside the list (exact emails or whole `@domains`, case-insensitive, no suffix matching) with 403 "Sign-up is limited to invited email addresses during the beta." before creating an account or sending an email. Existing accounts are unaffected.
+
+**Files and methods changed:** `src/main/resources/application-azure.properties`, `application-local-sqlserver.properties` — Instant mapping and UTC; `Dockerfile` — `-Duser.timezone=UTC`; `src/main/resources/application.properties` — `visualizer.auth.allowed-signup-emails`; `src/main/java/com/example/demo/service/auth/SignupAllowlist.java` — new (`allows`, `isOpen`, `NotAllowedException`); `service/auth/AuthService.java` — constructor and `signup`; `controller/auth/AuthExceptionHandler.java` — `signupNotAllowed` (403); tests `service/auth/SignupAllowlistTest.java` and `integration/SignupAllowlistIntegrationTest.java` — new.
+
+**Verification:** `SignupAllowlistTest` (2 tests) passed with JDK 21 under the stand-in runner. The time mapping cannot be exercised without SQL Server; it is first checked by the Azure deploy (login, OTP expiry, run history dates). The integration test and the Spring wiring run in the owner's `mvn clean verify`. These changes were found uncommitted in the working copy and reviewed line by line before committing.

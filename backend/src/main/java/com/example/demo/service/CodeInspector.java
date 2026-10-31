@@ -10,6 +10,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.ForStmt;
@@ -69,17 +70,31 @@ public class CodeInspector {
         for (MethodCallExpr call : unit.findAll(MethodCallExpr.class)) {
             String name = call.getNameAsString();
             String scope = call.getScope().map(Object::toString).orElse("");
-            String api = scope.isBlank() ? name : scope + "." + name;
+            String reason = blockedReason(name, scope);
+            if (reason != null) blocked.add(new BlockedApi(line(call.getBegin()), scope.isBlank() ? name : scope + "." + name,
+                    "Blocked " + reason + " API."));
+        }
+        // Method references (System::getenv, Runtime::exec) reach the same APIs without a call expression.
+        for (MethodReferenceExpr reference : unit.findAll(MethodReferenceExpr.class)) {
+            String name = reference.getIdentifier();
+            String scope = reference.getScope().toString();
+            String reason = blockedReason(name, scope);
+            if (reason != null) blocked.add(new BlockedApi(line(reference.getBegin()), scope + "::" + name,
+                    "Blocked " + reason + " API."));
+        }
+    }
+
+    private static String blockedReason(String name, String scope) {
             String reason = null;
-            if (name.equals("exit") && scope.endsWith("System")) reason = "process termination";
+            if (name.equals("getenv")) reason = "environment variable";
+            else if (name.equals("exit") && scope.endsWith("System")) reason = "process termination";
             else if (name.equals("exec")) reason = "process creation";
             else if (name.equals("start") || name.equals("runAsync") || name.equals("supplyAsync")
                     || name.equals("newVirtualThreadPerTaskExecutor") || name.equals("newThreadPerTaskExecutor")) reason = "thread or process creation";
             else if (name.equals("load") || name.equals("loadLibrary")) reason = "native library loading";
             else if (name.equals("forName") || name.equals("loadClass") || name.equals("invoke") || name.equals("setAccessible")
                     || name.equals("getDeclaredMethod") || name.equals("getDeclaredField")) reason = "reflection or dynamic code access";
-            if (reason != null) blocked.add(new BlockedApi(line(call.getBegin()), api, "Blocked " + reason + " API."));
-        }
+            return reason;
     }
 
     private static void inspectObjectCreation(CompilationUnit unit, List<BlockedApi> blocked) {

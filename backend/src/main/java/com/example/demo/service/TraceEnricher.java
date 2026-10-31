@@ -23,10 +23,17 @@ import java.util.Objects;
 @Service
 public class TraceEnricher {
     public List<TraceStep> enrich(List<TraceStep> raw, CodeMetadata metadata) {
-        return enrich(raw, metadata, false);
+        return enrich(raw, metadata, false, "");
     }
 
     public List<TraceStep> enrich(List<TraceStep> raw, CodeMetadata metadata, boolean truncated) {
+        return enrich(raw, metadata, truncated, "");
+    }
+
+    public List<TraceStep> enrich(List<TraceStep> raw, CodeMetadata metadata, boolean truncated, String source) {
+        FunctionCallTracker calls = new FunctionCallTracker(CallSiteAnalyzer.analyze(source));
+        LoopTracker loops = new LoopTracker(LoopSiteAnalyzer.analyze(source), raw);
+        CollectionViewResolver collectionViews = new CollectionViewResolver(source);
         List<TraceStep> result = new ArrayList<>(raw.size() + (raw.isEmpty() ? 0 : 1));
         Map<String, VariableSnapshot> previousVariables = Map.of();
         Map<String, HeapObjectSnapshot> previousObjects = Map.of();
@@ -35,7 +42,7 @@ public class TraceEnricher {
         int previousLoopLine = -1;
 
         for (int index = 0; index < raw.size(); index++) {
-            TraceStep step = raw.get(index);
+            TraceStep step = collectionViews.apply(loops.apply(calls.apply(raw.get(index)), index));
             String lineType = lineType(step.line(), step.event(), metadata);
             if (metadata.loops().stream().anyMatch(loop -> loop.startLine() == step.line())) {
                 if (previousLoopLine == step.line()) loopPasses++;
@@ -101,7 +108,8 @@ public class TraceEnricher {
         Map<String, VariableSnapshot> result = new LinkedHashMap<>();
         for (int frameIndex = 0; frameIndex < frames.size(); frameIndex++) {
             FrameSnapshot frame = frames.get(frameIndex);
-            String frameKey = frame.className() + "." + frame.method() + "[" + frameIndex + "]";
+            // Number frames from the bottom (main = 0) so existing frames keep their key when a call is pushed.
+            String frameKey = frame.className() + "." + frame.method() + "[" + (frames.size() - 1 - frameIndex) + "]";
             for (VariableSnapshot variable : frame.variables()) result.put(frameKey + "." + variable.name(), variable);
         }
         return result;
@@ -179,6 +187,15 @@ public class TraceEnricher {
             for (int index = 0; index < object.elements().size(); index++) {
                 result.put("[" + index + "]", display(object.elements().get(index)));
             }
+        }
+        if (object.collection() != null) {
+            // Collections report their DSA content: size, elements by position, or key -> value.
+            var collection = object.collection();
+            result.put("size", Integer.toString(collection.size()));
+            for (int index = 0; index < collection.items().size(); index++) {
+                result.put("[" + index + "]", display(collection.items().get(index)));
+            }
+            collection.entries().forEach(entry -> result.put("key " + display(entry.key()), display(entry.value())));
         }
         return result;
     }

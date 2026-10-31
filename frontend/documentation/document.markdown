@@ -12,7 +12,13 @@ A learner selects an example or edits Java source, submits it, and moves through
 
 ### Current scope
 
-The current UI includes Java samples, editable source with line numbers, run action, trace navigation and playback, a darker auto-scrolling active-line highlight, a Full analysis ON/OFF switch, compact function/variable frames in Normal mode, grouped parameters/locals and heap/static inspection in Full analysis mode, simplified Java type names, shape-coded values and indexed arrays, color-linked references, a double-click Focused box, backend loop ranges with frontend fallback in both modes, per-step variable/heap changes including field and array-index before/after values, source metadata, blocked API locations, stdout/errors, truncation state, and raw JSON. Normal mode shows captured array elements, nested multidimensional arrays, and object or collection fields directly inside the corresponding stack variable card; Full analysis mode continues to show references on stack and object contents in the heap. State-change details start collapsed and expand on demand. The account panel supports email/password signup, OTP verification/resend, sign-in/out, and password reset. Java remains the input language; the C++ example is only a product-shape reference.
+**Trees as of 2026-11-01:** binary trees are drawn as tree diagrams (root on top, lines to children, `TreeDiagram`): user classes with a `left`/`right` field of their own type (heap panel "Trees" section, inline when a variable points at the root, Focused box for any node's subtree; nodes pointed to by current variables are highlighted with the variable names), and TreeMap/TreeSet (red-black colours, with the sorted in-order list underneath).
+
+**Collections as of 2026-11-01:** recognised Java collections are drawn by `CollectionView` (heap panel, inline in Normal-mode stack cards, Focused box): header with type and `size`, then indexed cells (lists), a vertical stack with `top`, a horizontal queue with `front`/`back`, a priority queue with `next out` (or a heap-order note), `{ }` chips (sets), `key │ value` rows (maps), or linked-list nodes `prev │ value │ next` with addresses, ⇄ arrows and `first`/`last`. Boxed numbers show as plain values.
+
+**Layout as of 2026-10-31:** the right column shows Call stack and Heap & statics first, then the Focused box. The step controls (previous/play/next and a timeline labelled `STEP n / total`) float above the page once a trace exists: the learner drags them by the ⋮⋮ grip anywhere in the window, they stay there while stepping and after reloads (remembered in this browser), are kept inside the window on resize, and reset to bottom centre with a double-click or Home key on the grip. The Execution trace header and the step context block (event badge, source line, explanation, line type, return value) and the Loop status panel are commented out in `App.jsx`. State changes sit under the heap (Full analysis) or under the stack (Normal mode). Inside each frame the order is Parameters → function calls made outside loops → Local variables → running loop boxes → Other (e.g. `this`). Function calls show waiting/returned rows with values and a hover tooltip with the source form. Loop boxes show kind, line, iteration, the ending condition in the top-right corner (source small, values larger, ✓/✗ when checked), the loop's own variables, calls made inside the loop, and nested loops; double-clicking a loop variable shows its value per iteration in the Focused box (also available in Normal mode while something is focused). Normal-mode variable cards are compact and grouped; function name and return type are bold.
+
+Earlier scope: the UI includes Java samples, editable source with line numbers, run action, trace navigation and playback, a darker auto-scrolling active-line highlight, a Full analysis ON/OFF switch, compact function/variable frames in Normal mode, grouped parameters/locals and heap/static inspection in Full analysis mode, simplified Java type names, shape-coded values and indexed arrays, color-linked references, a double-click Focused box, backend loop ranges with frontend fallback in both modes, per-step variable/heap changes including field and array-index before/after values, source metadata, blocked API locations, stdout/errors, truncation state, and raw JSON. Normal mode shows captured array elements, nested multidimensional arrays, and object or collection fields directly inside the corresponding stack variable card; Full analysis mode continues to show references on stack and object contents in the heap. State-change details start collapsed and expand on demand. The account panel supports email/password signup, OTP verification/resend, sign-in/out, and password reset. Java remains the input language; the C++ example is only a product-shape reference.
 
 ## 2. Technical Flow and Configuration
 
@@ -21,7 +27,7 @@ The current UI includes Java samples, editable source with line numbers, run act
 1. `src/main.jsx` mounts the React application.
 2. `src/App.jsx` owns source, sample selection, backend availability, API response, trace index, focused entity, Full analysis mode, account state, and CSRF token. It sends `{ "code": "..." }` to authenticated `POST /api/visualize`, renders the mode-specific inspector, and keeps loop status visible in either mode.
 3. `src/examples.js` holds bundled Java examples. `src/components/CodeEditor.jsx` renders source with line numbers and current-line highlighting.
-4. `src/components/TracePanels.jsx` renders simple Normal-mode function/variable frames or the richer Full analysis stack and heap views; in Normal mode it resolves reference IDs against the selected step heap snapshot and recursively embeds indexed array values or object/collection fields in the stack variable card, with a depth limit and cycle detection. It also renders the Focused box, loop status, and linked heap values. `App.jsx` displays backend line classifications, variable/heap deltas, parser metadata, and blocked API diagnostics. `src/loopAnalysis.js` prefers backend JavaParser loop ranges and falls back to source scanning for older responses.
+4. `src/components/TracePanels.jsx` renders `FunctionCalls` rows and recursive `LoopBox` components inside each frame (helpers in `src/loopHistory.js`: `loopChain`, `innermostLoopAt`, `loopVariableHistory`), and simple Normal-mode function/variable frames or the richer Full analysis stack and heap views; in Normal mode it resolves reference IDs against the selected step heap snapshot and recursively embeds indexed array values or object/collection fields in the stack variable card, with a depth limit and cycle detection. It also renders the Focused box, loop status, and linked heap values. `App.jsx` displays backend line classifications, variable/heap deltas, parser metadata, and blocked API diagnostics. `src/loopAnalysis.js` prefers backend JavaParser loop ranges and falls back to source scanning for older responses.
 5. `src/components/AuthPanel.jsx` presents login first and links to signup, email verification, resend, and password reset. `App.jsx` waits for `/api/auth/me`; an unauthenticated visitor sees the account screen, and the visualizer appears after successful login. Mutating requests send the CSRF token and browser credentials; the backend's HttpOnly JWT cookie is not exposed to JavaScript. Trace submission also sends CSRF and cookie credentials. `vite.config.js` proxies `/api` and `/health` to `http://localhost:8080` during development. Production builds can set `VITE_API_BASE_URL`; configure backend CORS with the exact frontend origin.
 6. `src/styles.css` controls the responsive dashboard, compact stack/heap sizing, value shapes, and editor typography. The production build is emitted to `dist/`.
 
@@ -39,6 +45,8 @@ The current UI includes Java samples, editable source with line numbers, run act
 The frontend relies on `GET /health` and `POST /api/visualize` from `backend/`. The request is JSON `{ "code": "<Java source>" }`; the UI reads the camelCase response including `status`, `metadata`, `blockedApis`, `trace`, `frames`, `heap`, `lineType`, `variableChanges`, `heapChanges`, `stdout`, `exception`, `truncated`, and `truncatedReason`. During development, Vite proxies the calls locally. Backend JavaParser loop ranges are preferred; the UI retains heuristic parsing for older backend responses.
 
 ### Verification state
+
+**Status as of 2026-10-31:** function-call boxes, the stack-first layout and loop boxes are implemented on branch `feature/function-box-implementation`. They were bundled with esbuild and React 19 and rendered in headless Chromium against real traces; `pnpm run build` and a live browser check on the developer machine are pending.
 
 Earlier UI revisions passed `pnpm run build` with Vite 8.3.4 and the user manually ran multiple Java programs. For the latest login-first JWT UI, the production build passed after using Vite's runner config loader and an output directory in the writable temporary workspace (21 modules transformed). The ordinary project output path is still blocked by Windows permissions, and the standard command also received `EPERM` while writing its temporary config under `node_modules/.vite-temp`. Live browser integration with the changed backend remains pending because Java and Maven are unavailable in the current coding shell. The browser UI review could not be performed because Windows computer-use access to the user's Chrome window was denied; accessibility was checked in code, not with a screen reader.
 
@@ -220,3 +228,105 @@ The frontend is wired to the backend JWT flow but has not been verified end-to-e
 - `frontend/documentation/document.markdown` and `frontend/documentation/plan.markdown` — updated current behavior and appended this change analysis.
 
 **Verification:** Pending production build.
+
+### 2026-10-31 — Function call box UI
+
+**Technical analysis:** Each stack frame (Normal and Full analysis modes) renders the backend `calls` list below its variables, one row per call in execution order. A yellow row ("Waiting for return") shows the call with argument values, e.g. `result = fun_add(0, 4)`; a green row ("Returned") shows `result = 4 <= fun_add(0, 4)`. Hovering or keyboard-focusing a row shows the call as written in the source (`result = fun_add(result, number)`). The heading reads "Function calls" when there is more than one row. Variable cards are unchanged; a declared `result` variable keeps its own card.
+
+**Files and components changed:**
+
+- `src/components/TracePanels.jsx` — `FunctionCalls` renders rows with state label, value expression, source tooltip and an accessible label; used by `StackPanel` in both modes.
+- `src/styles.css` — `.function-calls`, `.function-call-state` (evaluating/returned), `.function-call-source` hover/focus tooltip.
+- `src/examples.js` — "Nested function calls and loop" example (`fun_multi` / `fun_add`), added 2026-10-25.
+
+**Verification:** `pnpm install`/`pnpm run build` could not run (npm registry blocked in the coding environment). All source files passed an esbuild JSX parse, and `StackPanel` was bundled with React 19 and rendered in headless Chromium for both modes, multiple rows and the hover tooltip. Run `pnpm run build` and check the "Nested function calls and loop" example in the browser locally.
+
+### 2026-10-31 — Stack-first trace layout and compact Normal-mode variables
+
+**Technical analysis:** The right column now starts with the Call stack and Heap & statics panels, followed by the step controls (previous/play/next and timeline), Loop status and Focused box. The Execution trace header (title, finished status, step counter) and the step context (event badge, source line, explanation, line-type chip, return value) are commented out in `App.jsx` rather than deleted, so they can be restored; the editor already highlights the active line and the call boxes show return values. The timeline's left label now reads `STEP n / total` in place of `START`. Placeholder, request-error, compile-error and blocked-API messages still render in the same card before a trace exists. State changes moved to the bottom of the Heap & statics panel (Full analysis) or below the Call stack (Normal mode). In each frame the order is now Parameters → Function call box → Local variables → Other (e.g. `this`), in both modes; Normal mode shows small group labels. Normal-mode variable cards are compact (smaller padding, 9px name, 14px value instead of 80×78px cards with a 23px value). Function name and return type are larger and bold in both modes. The stack/heap scroll height increased from 320px to 460px.
+
+**Files and components changed:**
+
+- `src/App.jsx` — `App` layout order, commented header/step context, `stateChanges` element placed under heap or stack, timeline step label.
+- `src/components/TracePanels.jsx` — `StackPanel` groups variables (parameters, locals, other) and places `FunctionCalls` after parameters in both modes.
+- `src/styles.css` — `.trace-card.controls-only`, `.heap-state-changes`, `.normal-state-changes`, `.normal-variable-group`, `.normal-group-label`, `.other-group`, compact `.normal-frame .variable-box`, bold `.normal-frame-heading` / `.frame-signature`, `.inspect-scroll` height.
+
+**Verification:** The full app was bundled with esbuild and React 19 and rendered in headless Chromium against a mocked backend that returned a real FunMulti trace (generated by the actual tracer); both modes, state changes and the controls were inspected in screenshots. `pnpm run build` and a live browser check remain to be run locally.
+
+### 2026-10-31 — Loop boxes and per-iteration history
+
+**Technical analysis:** Each running loop is drawn as a box inside its frame (both modes) after the frame's local variables. The box title shows the loop kind, line and iteration (`starting` before the first iteration); the top-right corner shows the ending condition with the source small (`i < times`) and the current values larger (`2 < 4`), plus ✓/✗ when the condition is being checked. Variables declared by the loop appear only inside its box; variables declared before the loop stay in Local variables. Function calls whose line lies inside a running loop are shown in the innermost such loop box instead of at frame level. A nested loop is drawn inside its parent's box. Double-clicking a loop variable opens the Focused box (now also shown in Normal mode while something is focused) with its value at the end of each iteration of the current run up to the selected step, the current iteration highlighted; it updates as the user steps. The separate Loop status panel is commented out. Added a "Nested loops with a function call" example.
+
+**Files and components changed:**
+
+- `src/loopHistory.js` — new; `loopChain`, `innermostLoopAt`, `loopVariableHistory`, `loopKindLabel`.
+- `src/components/TracePanels.jsx` — new `LoopBox`; `StackPanel` splits loop variables and in-loop calls into loop boxes; `FocusedPanel` renders loop-variable history.
+- `src/App.jsx` — Loop status commented out; Focused box shown in Normal mode when an item is focused and receives the trace and step.
+- `src/styles.css` — `.loop-box`, `.loop-condition`, `.loop-variable-grid`, `.loop-history*`, no text selection on variable double-click.
+- `src/examples.js` — Nested loops example.
+
+**Verification:** Bundled with esbuild and React 19 and rendered in headless Chromium against a mocked backend returning a real trace of the new example: nested boxes, in-loop call row, condition values and the `row` history (iter 1: 1, iter 2: 2) were checked in both modes. Run `pnpm run build` locally.
+
+### 2026-10-31 — Compact variables, collapsible frames, independent heap objects, fixed controls
+
+**Technical analysis:** Array elements no longer repeat a type per index: in the heap, the Focused box and nested inline arrays, a reference element shows only its colour-coded id (`#463`); the array's type is shown once in its header. Variable boxes are smaller in both modes (padding, minimum sizes, value cells, fonts). Each function frame has a collapse/expand button (expanded by default); the collapsed state is remembered per stack depth and method while stepping. Heap objects open and close independently (previously one shared "selected" id made opening a second object close both); following a reference also opens its target. The Call stack and Heap areas have a fixed height and the per-step State changes moved inside the heap scroll area (Full analysis) or below the controls (Normal mode), so the step controls stay at the same position on every step.
+
+**Files and components changed:**
+
+- `src/components/TracePanels.jsx` — `Value` compact reference mode; `InlineEntity`, `HeapPanel` array elements and `FocusedPanel` elements use it; `StackPanel` collapse state and button; `HeapPanel` keeps its own set of open objects and accepts a `footer`.
+- `src/App.jsx` — state changes passed as the heap footer; Normal-mode state changes placed below the controls.
+- `src/styles.css` — compact `.variable-box`, value shapes and `.array-element`; `.frame-collapse`; `.value-shape.compact`; fixed `.inspect-scroll` height.
+
+**Verification:** Headless Chromium with a real trace of a program with `int[]`, `int[][]` and `String[]`: the controls stayed at the same y-position on all 21 steps in both modes; three heap objects stayed open together and closing one left two open; a collapsed frame stayed collapsed after stepping. Run `pnpm run build` locally.
+
+### 2026-10-31 — Static Web Apps configuration and CI build
+
+**Technical analysis:** Added `public/staticwebapp.config.json` (copied into `dist/` by Vite) with an SPA navigation fallback to `index.html` and basic security headers for Azure Static Web Apps. The CI/CD workflow builds the frontend with `pnpm install --frozen-lockfile` and `pnpm run build`, setting `VITE_API_BASE_URL` from the repository variable `BACKEND_URL`, and uploads `dist/` to Static Web Apps on pushes to `main` once Azure is configured. No component code changed.
+
+**Files and components changed:** `public/staticwebapp.config.json` (new); `../.github/workflows/ci-cd.yml` (frontend job and Static Web Apps deploy); `../docs/DEPLOYMENT.md`.
+
+**Verification:** JSON validated locally; the CI build and the Static Web Apps upload have not run yet (first run happens on the pull request / push to `main`).
+
+### 2026-10-31 — Verification status refresh
+
+**Technical analysis:** The project owner checked the current UI (function-call boxes, loop boxes, layout, collapsible frames, compact variables, heap fixes) in the browser and declared the frontend complete. Statuses in the frontend plan, root plan and README were updated from "pending" to verified. The first `pnpm run build` on a clean machine will run in the CI workflow.
+
+**Files changed:** `documentation/plan.markdown`, this document, root `plan.markdown`, `README.md`.
+
+**Verification:** Documentation-only change; verification facts come from the owner's report.
+
+### 2026-10-31 — Floating, draggable step controls
+
+**Technical analysis:** The step controls (previous, play/pause, next, timeline and `STEP n / total`) moved out of the trace card into a floating panel above the page. It appears when a trace exists, starts at the bottom centre of the window, and can be dragged anywhere by the ⋮⋮ grip (pointer events with pointer capture, so mouse, pen and touch work and the buttons/slider are not affected). The position stays fixed while stepping, playing or re-running, is remembered across reloads in this browser (`localStorage` key `java-visualizer.step-controls.position`, wrapped in try/catch so private windows still work), is clamped back inside the window on resize, and resets to the default with a double-click or Home on the grip; arrow keys move it (Shift for larger steps). The trace card now appears only before a trace exists (placeholder, connection, compile and blocked-API messages). The page gets extra bottom padding so the panel never permanently covers the last content.
+
+**Files and components changed:**
+
+- `src/components/FloatingPanel.jsx` — new; `FloatingPanel` (`clamp`, `defaultPosition`, pointer/keyboard handlers, persisted position).
+- `src/App.jsx` — `App` renders the step controls inside `FloatingPanel`; trace card only without a trace; `has-floating-controls` class on the shell.
+- `src/styles.css` — `.floating-panel`, `.floating-grip`, `.floating-panel-body`, `.has-floating-controls` padding; removed `.trace-card.controls-only`.
+
+**Verification:** Bundled with esbuild and React 19 and exercised in headless Chromium with a real trace: no panel before running; default bottom centre (380,830 in a 1400×900 window); dragged to (144,209); unchanged after six Next clicks and a slider change; unchanged after page reload and a new run; pulled inside the window when resized to 700×600; double-click reset to bottom centre; arrow keys moved it. `pnpm run build` and a check in the owner's browser are pending.
+
+### 2026-11-01 — CSRF retry and no logout on server errors
+
+**Technical analysis:** Visualization and account requests now go through `securePost`, which sends the CSRF header and, if the server answers 403 (stale or missing security token), fetches a fresh token and retries once. Only a real 401 returns the user to the login page (the editor content is kept because `App` state survives the login screen); other non-OK responses show their message in the trace card ("Could not run the visualizer") without signing the user out. Paired with the backend fix that stopped every server error from being reported as 401.
+
+**Files and components changed:** `src/App.jsx` — `getCsrfToken(forceRefresh)`, new `securePost`, `authRequest`, `runCode`; request-error heading.
+
+**Verification:** Headless Chromium with a mock backend: a first run rejected with 403 refetched the token and succeeded without leaving the visualizer; a 500 showed "The backend returned an error (HTTP 500)" while staying signed in; a 401 showed the login page. Owner browser check pending.
+
+### 2026-11-01 — Collection views (both modes)
+
+**Technical analysis:** New `CollectionView` renders the backend's `object.collection`: lists as indexed cells; `Stack` and deques used as stacks as a vertical stack (top first, labelled `top`); queues horizontally with `front` and `back`; priority queues horizontally with `next out` and, when the backend could only give heap order, a note; sets as `{ … }` chips; maps as `key │ value` rows; linked lists as node boxes `prev │ value │ next` showing each node's address, ⇄ arrows between nodes and `first`/`last` labels. Every collection shows its type and `size`; capped collections show "showing first N". Values reuse `Value` (plain values for boxed numbers, colour-linked references for objects). Used in the heap panel (summary line shows view and `Type · size N`), inline in Normal-mode stack cards, and in the Focused box. Added the example "Collections: list, stack, queue, map, set".
+
+**Files and components changed:** `src/components/TracePanels.jsx` — new `CollectionView`, `LinkedNodes`, `CollectionItem`, `shortId`; `InlineEntity`, `HeapPanel`, `FocusedPanel` use them. `src/styles.css` — `.collection-*`, `.list-cell`, `.queue-cell`, `.stack-cell`, `.set-item`, `.map-entry`, `.linked-*`, `.inline-collection`. `src/examples.js` — Collections example.
+
+**Verification:** Bundled with esbuild and React 19 and rendered in headless Chromium against a real trace with 15 collection variables, in Normal mode and in the Full-analysis heap panel; all views, sizes, labels and node addresses were checked in screenshots. `pnpm run build` and an owner browser check are pending.
+
+### 2026-11-01 — Tree diagrams for binary trees, TreeMap and TreeSet
+
+**Technical analysis:** Added `TreeDiagram`, which draws a binary tree like a whiteboard sketch: in-order position gives the x coordinate (so nodes never overlap and a BST reads in sorted order left to right), depth gives y, SVG lines connect parents to children, and nodes widen into pills for longer labels such as `key : value`. `treeModel.js` recognises user tree nodes (a field named `left`/`right`/`leftChild`/`rightChild`/`l`/`r` whose type is the node's own class), labels each node with its data fields (child and `parent` links excluded), finds roots (nodes nobody points to), lays trees out with cycle and 200-node guards, and maps variable names to the nodes they reference. Uses: the heap panel shows a "Trees" section with one diagram per root and leaves the node objects out of the object list (double-click a node to focus it); in Normal mode a variable pointing at a root shows the whole tree and one pointing inside a tree shows that node; the Focused box shows a focused node's subtree; `CollectionView` draws TreeMap/TreeSet as a red-black tree with the in-order list below. Nodes referenced by variables in any frame (e.g. `node` in each recursive call, `root`) are highlighted and labelled, which makes recursive traversals easy to follow. Added the example "Binary search tree + TreeMap / TreeSet".
+
+**Files and components changed:** `src/treeModel.js` and `src/components/TreeDiagram.jsx` — new. `src/components/TracePanels.jsx` — `CollectionView` (tree), `InlineEntity`/`VariableBox` (tree nodes), `StackPanel` (tree data and highlights), `HeapPanel` (Trees section, `frames` prop), `FocusedPanel` (subtree). `src/App.jsx` — passes frames to the heap panel. `src/styles.css` — `.tree-*`. `src/examples.js` — BST example.
+
+**Verification:** Bundled with esbuild and React 19 and rendered in headless Chromium against a real trace of the BST example: mid-traversal the heap tree highlighted `node` in three recursive frames and `root`; at the end Normal mode showed the BST, the TreeMap (pill nodes, red node) and the TreeSet (red nodes) with in-order lists. `pnpm run build` and owner browser check pending.

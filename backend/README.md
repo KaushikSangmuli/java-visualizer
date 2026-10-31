@@ -48,7 +48,9 @@ The response uses camelCase and returns a handled outcome with HTTP 200. Status 
 {"status":"ok","message":null,"errors":null,"trace":[{"step":0,"line":1,"event":"call","stdout":"","frames":[{"method":"main","className":"Main","returnType":"void","line":1,"variables":[{"name":"args","type":"java.lang.String[]","value":"[Ljava.lang.String;@<id>","kind":"parameter"}]}],"explanation":"Entered method main.","returnValue":null}],"truncated":false,"truncatedReason":null,"exception":null,"stdout":"Hello\n"}
 ```
 
-Submit a sample while the server is running:
+Each frame also carries `calls` (calls the frame is waiting on or just got a result from, with values and source form) and `loops` (running loops with iteration, condition values, true/false verdict when checked, loop-declared variables and nested loops). See `documentation/document.markdown` for field details.
+
+`/api/visualize` requires a signed-in JWT cookie and a CSRF header since phase two; use the frontend, or sign in through the auth endpoints first. Submit a sample while the server is running:
 
 ```powershell
 curl.exe -X POST http://localhost:8080/api/visualize -H "Content-Type: application/json" --data-binary "@samples/largest.json"
@@ -64,11 +66,11 @@ The `samples/` files are illustrative requests. Run `mvn -q test` for the unit a
 
 ## Limitations and safety
 
-The blocklist is defense in depth only. Arbitrary Java execution is unsafe without proper OS/container sandboxing. The provided container runs the app as a non-root user with a full JDK because the service needs both `javac` and `jdk.jdi`; production deployments must additionally restrict network egress, CPU, memory, process count, and writable paths. CORS and rate limits do not make arbitrary code safe.
+User programs run in a child JVM under a Java Security Manager policy written per run: they may read only their own compiled classes and a few harmless system properties — no environment variables (which hold the database password and signing secrets), no other files, no network, no new processes, no reflection on private members. The AST blocklist (including `getenv` and method references such as `System::exit`) rejects obvious misuse before compiling. The container runs as a non-root user with a full JDK 21 (needed for `javac`, `jdk.jdi` and the Security Manager, which JDK 24 removed). CPU and memory are bounded by the step/time limits and container size but not isolated per user; treat public hosting as a private beta until the production-readiness review.
 
 ## Container build and run
 
-From `backend/`, build the image with `docker build -t java-visualizer-backend .`, then run it with `docker run --rm -p 8080:8080 --read-only --tmpfs /tmp:rw,noexec,nosuid,size=256m --memory=1g --cpus=2 --pids-limit=128 --cap-drop=ALL --security-opt=no-new-privileges java-visualizer-backend`. The debuggee JVM is a child of this process, so resource caps apply to the whole container. Configure network policy at the host/orchestrator so user programs cannot reach untrusted services; do not treat the image alone as a secure sandbox.
+From `backend/`, build the image with `docker build -t java-visualizer-backend .`, then run it with `docker run --rm -p 8080:8080 --read-only --tmpfs /tmp:rw,noexec,nosuid,size=256m --tmpfs /app/data:rw,size=64m,uid=10001 --memory=2g --cpus=2 --pids-limit=256 --cap-drop=ALL --security-opt=no-new-privileges java-visualizer-backend` (local profile, H2 in `/app/data`, OTP `1234`). For Azure see [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md). The debuggee JVM is a child of this process, so resource caps apply to the whole container. Configure network policy at the host/orchestrator so user programs cannot reach untrusted services; do not treat the image alone as a secure sandbox.
 
 ## Tests
 

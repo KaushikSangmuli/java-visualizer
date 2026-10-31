@@ -1,77 +1,100 @@
 # Java Code Memory Visualizer
 
-An interactive learning tool for Java and data structures. The backend compiles and traces Java source in a separate debuggee JVM. The React frontend lets you submit code, step through the trace, and inspect stack frames, variable values, heap objects, static fields, and console output.
+**Python Tutor for Java.** Paste a Java program, run it, and step through it line by line. At every step you see the call stack, each function's parameters and local variables, the calls a function is waiting on, the loops it is running, heap objects, static fields and console output.
+
+Built as a CDAC final project: a Spring Boot backend traces real Java execution with the Java Debug Interface (JDI), and a React frontend turns that trace into an interactive visual.
+
+![Normal mode: nested loop boxes with a function call inside the inner loop](docs/images/normal-mode-loops.png)
+
+## Features
+
+- **Real execution, not simulation.** Code is compiled with the JDK compiler and run in a separate debug JVM; every line, call and return is recorded.
+- **Call stack.** One box per active function with parameters, local variables and `this`, newest call on top; any function box can be collapsed and expanded.
+- **Function call boxes.** A caller shows the call it is waiting on, e.g. `result = fun_add(0, 4)`, and after the return `result = 4 <= fun_add(0, 4)`. Hover to see the call as written (`fun_add(result, number)`). Works for recursion, several calls on one line and constructors (`n = Node@42 <= new Node(5)`).
+- **Loop boxes.** Each running loop (`for`, for-each, `while`, `do-while`) is a box inside its function showing the iteration, its own variables, the calls made inside it and nested loops. The top-right corner shows the ending condition with live values (`i < times` → **`2 < 4`**) and ✓/✗ when it is checked. Double-click a loop variable to see its value in every iteration so far.
+- **Trees that look like trees.** Your own `TreeNode` classes and `TreeMap`/`TreeSet` are drawn root-on-top with lines to children; nodes your variables point to (`root`, `node` in each recursive call) are highlighted by name.
+- **Java collections, DSA-style.** `ArrayList` as indexed cells, `LinkedList` as nodes `prev │ value │ next` with addresses and arrows, stacks vertical with the top marked, queues horizontal (front/back), `PriorityQueue` in next-out order, sets as `{ }`, maps as `key │ value` — always with the size, never the JDK internals.
+- **Heap & statics.** Objects, arrays, collections, aliases and cycles, linked to the variables that reference them by colour.
+- **Floating step controls.** Previous / play / next and the timeline float above the page; drag them anywhere and they stay there (double-click the grip to reset).
+- **Two views.** *Full analysis* shows stack, heap and the Focused box; *Normal* mode shows compact frames with arrays and objects drawn inline.
+- **State changes** per step, compile errors, runtime exceptions, program output and the raw JSON response.
+- **Accounts.** Email/password signup with OTP verification, login via HttpOnly JWT cookie, password reset.
+- **Run history.** Every *Run & visualize* is saved for the signed-in user with success/failure and the reason it failed (compiler errors, exception, blocked API, limit); `GET /api/runs` returns totals and recent runs. Source code is not stored.
+
+![Full analysis: stack, heap, controls and the Focused box with a loop variable's history](docs/images/full-analysis-loops.png)
+
+## Tech stack
+
+| Part | Technology |
+|---|---|
+| Backend | Java 21 (targets Java 17), Spring Boot 3.2, JDI, JavaParser, Spring Security (JWT), Spring Data JPA, Flyway |
+| Database | H2 (local default), SQL Server / Azure SQL |
+| Frontend | React 19, Vite 8 |
+| Email OTP | Brevo (hosted profiles only) |
 
 ## Project layout
 
 ```text
 java-visualizer/
-├── backend/                 Spring Boot + Maven Java API
-├── frontend/                React + Vite web application
-├── reference_for_frontend/  Original UI reference, preserved unchanged
-├── backend/documentation/   Backend product/technical document and staged plan
-├── frontend/documentation/  Frontend product/technical document and staged plan
-└── .gitignore
+├── backend/                  Spring Boot + Maven API (compiler, JDI tracer, auth)
+│   ├── documentation/        Backend product/technical document and plan
+│   └── samples/              Example programs and request bodies
+├── frontend/                 React + Vite web app
+│   └── documentation/        Frontend product/technical document and plan
+├── docs/images/              README screenshots
+├── plan.markdown             Overall plan, status table and change history
+└── README.md
 ```
-
-Backend planning and change history are in `backend/documentation/`; frontend planning and change history are in `frontend/documentation/`. The Java project is in `backend/`; its physical packages remain under `backend/src/main/java/com/example/demo/...`. The reference project guided the editor, step navigation, call-stack, memory, and output layout. Its C++ execution logic and embedded third-party API credentials were not copied. The live UI accepts Java source and calls this project's API.
-
-## Prerequisites
-
-- JDK 21 (the backend targets Java 17 bytecode) and Maven 3.8+
-- Node.js 20.19 or newer and npm
-- A modern browser
 
 ## Run locally
 
-Start the backend in one terminal:
+**Prerequisites:** JDK 21 (full JDK, not a JRE), Maven 3.8+, Node.js 20.19+ and pnpm (or npm).
+
+Backend (terminal 1):
 
 ```powershell
-cd "C:\path\to\java-visualizer\backend"
+cd backend
 mvn spring-boot:run
 ```
 
-Start the frontend in a second terminal:
+Frontend (terminal 2):
 
 ```powershell
-cd "C:\path\to\java-visualizer\frontend"
-npm install
-npm run dev
+cd frontend
+pnpm install
+pnpm run dev
 ```
 
-Open `http://localhost:5173`. Vite proxies `/api/visualize` and `/health` to the backend on port 8080 during development. Keep the backend running while using the UI.
+Open `http://localhost:5173`, sign up with any email, and enter OTP **`1234`** (the local profile does not send email). Pick an example such as **Nested loops with a function call** and press **Run & visualize**.
 
-For a production frontend bundle, run `npm run build` from `frontend/`; Vite writes the generated bundle to `frontend/dist/`.
+Run the tests with `mvn clean verify` in `backend/` and build the frontend with `pnpm run build` in `frontend/`. Eclipse users can import `backend/` as an existing Maven project and run `VisualizerApplication`.
 
-## Eclipse backend import
+## API (summary)
 
-Import only the Maven project under `backend/`:
+- `GET /health` → `{"status":"ok"}`
+- `GET /api/auth/csrf`, `POST /api/auth/signup`, `/verify-email`, `/login`, `/logout`, `GET /api/auth/me`, password reset endpoints
+- `GET /api/runs` (signed in) → `totalRuns`, `successfulRuns`, `failedRuns`, 20 most recent runs
+- `POST /api/visualize` (signed in) with `{"code":"<Java source>"}` → status, trace steps (frames with variables, `calls` and `loops`, heap, line type, state changes), stdout, errors and metadata
 
-1. In Eclipse, select **File → Import → Maven → Existing Maven Projects**.
-2. Choose the `java-visualizer/backend` folder containing `pom.xml`.
-3. Ensure JDK 21 is configured under **Java → Installed JREs** and the project compiler compliance is Java 17.
-4. Run **Maven → Update Project**.
-5. Run `VisualizerApplication.java` as a Spring Boot application.
+Full details: [backend/README.md](backend/README.md) and [backend/documentation/document.markdown](backend/documentation/document.markdown).
 
-The React application is a separate project in `frontend/` and can be edited in a JavaScript-capable editor.
+## Status
 
-## API
+| Area | Status |
+|---|---|
+| Visualizer core (trace, stack, heap, statics, state changes) | Done |
+| Function-call boxes, loop boxes, stack-first layout, collapsible frames, compact variables | Done and verified locally (tests pass, UI checked) |
+| Accounts (signup, OTP, JWT login, reset) | Working locally (H2, OTP `1234`); Azure SQL + email pending first deploy |
+| Run history in the database | Done and verified locally (`mvn clean verify`) |
+| Docker image, GitHub Actions CI/CD, Azure deployment config | Ready; Azure resources not created yet ([deployment guide](docs/DEPLOYMENT.md)) |
+| DSA sheet / LeetCode problem picker | Future idea |
 
-- `GET /health` returns `{"status":"ok"}`.
-- `POST /api/visualize` accepts `{"code":"<Java source>"}` and responds with the trace, stack, variables, heap/static fields, stdout, and handled errors. The frontend displays these fields as each trace step is selected.
+**New to the project or resuming work?** Start with [docs/HANDOVER.md](docs/HANDOVER.md). The detailed plan, status, deployment runbook and change history live in [plan.markdown](plan.markdown), [backend/documentation](backend/documentation/) and [frontend/documentation](frontend/documentation/).
 
-Trace responses also include source metadata, line classifications, variable and heap deltas, and a final `end` event. The backend applies a configurable AST API blocklist, per-client rate limit, and concurrency limit. These are guardrails rather than a secure Java sandbox. See `backend/README.md` for Docker restrictions and runtime settings.
+## Deployment
 
-## Accounts (phase two)
+Azure Static Web Apps (frontend), Azure Container Apps (backend image from GitHub Packages), Azure SQL Database free offer and Brevo, deployed by GitHub Actions on every push to `main`. Step-by-step setup: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-The backend now includes email/password signup, OTP verification, JWT-cookie login/logout, and password reset. The frontend opens on login with a signup link; authenticated users then reach the visualizer. Local development defaults to a persistent H2 database in `backend/data/` and accepts OTP `1234` without email. Use the `local-sqlserver` profile to connect to local SQL Server using its migrations and the same OTP bypass. Other profiles require a Brevo API key and verified sender. For Azure deployment, activate the `azure` Spring profile, set Azure SQL connection variables, and provide `VISUALIZER_JWT_SECRET` (at least 32 UTF-8 bytes). Never place credentials in frontend code or commit them; do not deploy with a local profile.
+## Safety
 
-The frontend uses the backend's HttpOnly JWT cookie and CSRF token. The backend requires authentication for `/api/visualize`. In cloud builds, set `VITE_API_BASE_URL` to the backend origin and configure backend `CORS_ALLOWED_ORIGINS` to the exact frontend origin. See `backend/README.md` for environment variables and endpoints. The frontend production build passed when written to a permitted temporary location; writing to the project `dist` directory is blocked by this environment's Windows permissions. Backend compilation and end-to-end authentication have not been verified because Java and Maven are unavailable in this coding shell.
-
-## Phase-two services and CI/CD plan
-
-The selected low-cost direction is Azure Static Web Apps Free for the frontend, Azure Container Apps Consumption for the backend, Azure SQL Database Free offer for persistence, and Brevo Free for OTP email. Free limits and creation-time settings are summarized in [`plan.markdown`](plan.markdown). GitHub Actions is planned in `.github/workflows/ci-cd.yml`: validate pull requests, then deploy both applications after a successful push to `main`. This workflow and cloud resources have not yet been created.
-
-## Scope and safety
-
-The current interface supports Java source submission, sample loading, execution, line highlighting, trace playback/step controls, stack and variable inspection, heap/static-field inspection, compile/runtime/blocked API display, state changes, stdout, and raw response inspection. Arbitrary Java execution is not safe without proper OS sandboxing; use trusted code locally only.
+User programs run in a separate JVM under a Java Security Manager policy: no environment variables, no files except their own classes, no network, no new processes. A source blocklist, time/step/output limits, per-user rate limits and a non-root container add further guardrails. CPU and memory are not isolated per user, so treat a hosted instance as a private beta until the production-readiness review in [plan.markdown](plan.markdown).
