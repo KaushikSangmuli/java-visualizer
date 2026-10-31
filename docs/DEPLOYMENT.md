@@ -99,6 +99,7 @@ Any random string of at least 32 characters. In PowerShell:
      | `VISUALIZER_BREVO_API_KEY` | secret reference `brevo-api-key` |
      | `VISUALIZER_EMAIL_SENDER` | verified sender address |
      | `CORS_ALLOWED_ORIGINS` | `FRONTEND_URL` from step 5 (exact, no trailing slash) |
+     | `ALLOWED_SIGNUP_EMAILS` | *optional — leave unset so anyone can sign up.* To limit sign-up later: comma-separated emails or `@domains`, e.g. `@cdac.in, friend@gmail.com` |
 
    - **Health probes**: liveness and readiness HTTP `GET /health` on port 8080.
 3. Copy the **Application Url** — this is `BACKEND_URL`. Open `BACKEND_URL/health`; it should return `{"status":"ok"}` (the first request after idle can take ~30–60 s while the container and the paused database wake up).

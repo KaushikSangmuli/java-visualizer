@@ -141,6 +141,7 @@ Java package names map to real nested directories such as `backend/src/main/java
 | `visualizer.auth.login-max-failures` | `10` | Login failures allowed before a client is throttled |
 | `visualizer.auth.login-window-ms` | `900000` | Login failure throttle window |
 | `visualizer.auth.jwt-ttl-seconds` | `1800` | JWT cookie lifetime; renewed on any authenticated request once half of it has passed, so only 30 minutes of inactivity signs a user out |
+| `visualizer.auth.allowed-signup-emails` | empty (everyone) | Optional beta gate (`ALLOWED_SIGNUP_EMAILS`): comma-separated emails or `@domains` allowed to create accounts; others get 403 before any account or email is created |
 | `visualizer.auth.max-session-hours` | `12` | Hard limit for renewal: a session is never renewed beyond this many hours after the password login |
 | `visualizer.auth.cookie-secure` | local `false`, hosted `true` | Requires HTTPS when enabled |
 | `visualizer.auth.cookie-same-site` | local `Lax`, hosted `None` | Browser cookie cross-site policy (auth and CSRF cookies) |
@@ -486,3 +487,11 @@ The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it h
 **Files and methods changed:** `src/main/java/com/example/demo/model/TreeNodeSnapshot.java` — new; `model/CollectionSnapshot.java` — `tree` component, compatibility constructor, `withTree`; `tracer/Tracer.java` — `readCollection` and `wrapped` keep the tree, new `withTree` (breadth-first walk); `src/test/java/com/example/demo/integration/VisualizerIntegrationTest.java` — TreeSet tree assertions.
 
 **Verification:** Real tracer outside Spring: `TreeMap` {mia, al, zoe, bo} and `TreeSet` {5, 1, 9, 3, 7} produced the expected red-black shapes and colours; the integration-test expectation (root 5 black, children 1 and 9) matched real output. `mvn clean verify` pending.
+
+### 2026-11-01 — Azure SQL time mapping and optional signup allowlist
+
+**Technical analysis:** (1) The SQL Server migrations store times in `DATETIME2`, while Hibernate 6 binds `java.time.Instant` as `TIMESTAMP_UTC` (SQL Server `datetimeoffset`) by default, which the driver may fail to read back from `DATETIME2`; locally H2 hides this. The `azure` and `local-sqlserver` profiles now set `hibernate.type.preferred_instant_jdbc_type=TIMESTAMP` and `hibernate.jdbc.time_zone=UTC`, and the image starts the JVM with `-Duser.timezone=UTC`. (2) Optional signup allowlist (`visualizer.auth.allowed-signup-emails`, env `ALLOWED_SIGNUP_EMAILS`): empty by default, so signup stays open to everyone, as the owner decided. When set, `AuthService.signup` rejects addresses outside the list (exact emails or whole `@domains`, case-insensitive, no suffix matching) with 403 "Sign-up is limited to invited email addresses during the beta." before creating an account or sending an email. Existing accounts are unaffected.
+
+**Files and methods changed:** `src/main/resources/application-azure.properties`, `application-local-sqlserver.properties` — Instant mapping and UTC; `Dockerfile` — `-Duser.timezone=UTC`; `src/main/resources/application.properties` — `visualizer.auth.allowed-signup-emails`; `src/main/java/com/example/demo/service/auth/SignupAllowlist.java` — new (`allows`, `isOpen`, `NotAllowedException`); `service/auth/AuthService.java` — constructor and `signup`; `controller/auth/AuthExceptionHandler.java` — `signupNotAllowed` (403); tests `service/auth/SignupAllowlistTest.java` and `integration/SignupAllowlistIntegrationTest.java` — new.
+
+**Verification:** `SignupAllowlistTest` (2 tests) passed with JDK 21 under the stand-in runner. The time mapping cannot be exercised without SQL Server; it is first checked by the Azure deploy (login, OTP expiry, run history dates). The integration test and the Spring wiring run in the owner's `mvn clean verify`. These changes were found uncommitted in the working copy and reviewed line by line before committing.

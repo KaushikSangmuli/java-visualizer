@@ -53,7 +53,8 @@ GitHub: `KaushikSangmuli/java-visualizer` (public for now; the owner may make it
 | `faf2801` | Fix false logouts: `/error` permitted, JSON 403 for CSRF, sliding JWT session, frontend CSRF retry. |
 | `9d57737` | Security review of that fix (no bypass); sliding session capped at 12 hours after login; `JwtTokenServiceTest`. |
 | `ec0031d` | DSA views for Java collections (list, linked list nodes with addresses, stack, queue, priority queue, set, map; size); stack/queue from code usage; Collections example. |
-| (next commit, 2026-11-01) | Tree diagrams: user binary trees (variable highlights) and TreeMap/TreeSet red-black trees; BST example. |
+| `913decd` | Tree diagrams: user binary trees (variable highlights) and TreeMap/TreeSet red-black trees; BST example. |
+| (next commit, 2026-11-01) | Azure SQL time mapping and optional signup allowlist (off). |
 
 ## 4. Key decisions and why
 
@@ -61,6 +62,7 @@ GitHub: `KaushikSangmuli/java-visualizer` (public for now; the owner may make it
 |---|---|
 | Work on `feature/function-box-implementation`, merge to `main` by pull request | `main` deploys automatically; CI must be green first. |
 | JWT in an HttpOnly cookie + CSRF token | Token not readable by JavaScript; CSRF protects cookie-based requests. |
+| Signup open to everyone; optional allowlist (`ALLOWED_SIGNUP_EMAILS`) available but unset | Owner wants anyone to use the app; the switch exists if abuse appears. |
 | Sliding 30-minute session, hard cap 12 hours after login | Active users are not logged out mid-session; a stolen cookie cannot be kept alive indefinitely. |
 | Local OTP `1234` only in `local` / `local-sqlserver` profiles | Develop without email; hosted `azure` profile sends real codes via Brevo. |
 | H2 locally, Azure SQL in the cloud, Flyway owns the schema | Same code, different profile; migrations run automatically on startup; never edit an applied migration — add a new version. |
@@ -92,7 +94,7 @@ Open `http://localhost:5173`, sign up, use OTP `1234`. Tests: `mvn clean verify`
 - **Not yet built by Maven:** commit `1c08d1d` and later (sandbox, V4, CSRF, CI/CD). First build = CI on the pull request.
 - **Collection views and tree diagrams (2026-11-01):** verified with the real tracer and in headless Chromium; `mvn clean verify` and owner browser check pending.
 - **Not yet checked in the owner's browser:** floating step controls (tested in headless Chromium); login-session fix from 2026-11-01 (owner hit a false "Authentication required" after running custom code).
-- **Open pre-deployment items (proposed, awaiting owner's go-ahead):** Azure SQL date/time mapping fix (`hibernate.type.preferred_instant_jdbc_type=TIMESTAMP` for SQL Server profiles, `-Duser.timezone=UTC` in the image); optional signup allowlist for the private beta.
+- **Pre-deployment items done (2026-11-01):** Azure SQL time mapping (UTC `TIMESTAMP` for `Instant`) and an optional signup allowlist, left off so anyone can sign up (`ALLOWED_SIGNUP_EMAILS` can restrict it later).
 - **Not started:** Azure resources (see the runbook in `plan.markdown` section 11).
 
 ## 7. What to do next

@@ -21,4 +21,4 @@ EXPOSE 8080
 # The backend gets about a third of the container's memory; the rest is left for up to
 # visualizer.max-concurrent user-program JVMs (128 MB heap each plus JVM overhead). The flags are
 # passed on the command line, not via JAVA_TOOL_OPTIONS, so the user-program JVMs do not inherit them.
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=35", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=35", "-XX:+ExitOnOutOfMemoryError", "-Duser.timezone=UTC", "-jar", "/app/app.jar"]

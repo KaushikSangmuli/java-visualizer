@@ -23,6 +23,11 @@ public class AuthExceptionHandler {
                 .body(Map.of("message", "Account email service is not available. Please try again later."));
     }
 
+    @ExceptionHandler(com.example.demo.service.auth.SignupAllowlist.NotAllowedException.class)
+    public ResponseEntity<Map<String, String>> signupNotAllowed(com.example.demo.service.auth.SignupAllowlist.NotAllowedException exception) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", exception.getMessage()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> invalidInput(IllegalArgumentException exception) {
         return ResponseEntity.badRequest().body(Map.of("message", exception.getMessage()));

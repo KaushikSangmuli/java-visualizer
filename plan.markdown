@@ -17,6 +17,7 @@
 | Stage 1–2 accounts (H2/SQL Server, signup, OTP, JWT cookie, reset) | Working locally with H2 and OTP `1234` (owner, 2026-10-31); build and H2 migrations verified by `mvn clean verify` | Azure SQL migration, Brevo email and cross-site cookies on first deploy |
 | Tree diagrams (user binary trees with variable highlights; TreeMap/TreeSet red-black trees) | Done on `feature/function-box-implementation` (2026-11-01) | `mvn clean verify`, owner browser check |
 | Java collection views (list, linked list with node addresses, stack, queue, priority queue, set, map; size; stack/queue from code usage) | Done on `feature/function-box-implementation` (2026-11-01) | `mvn clean verify`, owner browser check |
+| Azure SQL `Instant`/`DATETIME2` mapping (UTC) and optional signup allowlist (off: signup open) | Done on `feature/function-box-implementation` (2026-11-01) | `mvn clean verify`; time mapping checked on first Azure deploy |
 | Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31 (H2 migration + integration test) | Azure SQL migration on first deploy; optional UI |
 | Stage 3 Docker image | Dockerfile ready (dependency cache, non-root, JDK 21, writable H2 folder); local `docker run` documented | First build in GitHub Actions; sample traces inside the container |
 | Stage 4 GitHub Actions CI | `.github/workflows/ci-cd.yml`: backend `mvn verify`, frontend build, Docker build + image check | First green run on a pull request |
@@ -263,6 +264,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 - [Render free services limitations](https://render.com/docs/free) — comparison showing demo-only service behavior and expiring, unbacked free Postgres.
 
 ## 10. Change History
+
+### 2026-11-01 — Azure SQL time mapping and optional signup allowlist
+
+**Technical analysis:** SQL Server profiles bind `Instant` as `TIMESTAMP` in UTC (matching the `DATETIME2` columns) and the image runs in UTC, so login/OTP/run dates can be read on Azure SQL. Added an optional signup allowlist (`ALLOWED_SIGNUP_EMAILS`), left empty so anyone can sign up.
+
+**Files changed:** backend properties, `Dockerfile`, `SignupAllowlist.java` (new), `AuthService.java`, `AuthExceptionHandler.java`, tests; documentation, `docs/DEPLOYMENT.md`, `docs/HANDOVER.md`.
+
+**Verification:** Allowlist unit tests passed locally; `mvn clean verify` and Azure check pending.
 
 ### 2026-11-01 — Tree diagrams
 
