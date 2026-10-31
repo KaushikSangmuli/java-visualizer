@@ -262,6 +262,14 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 
 ## 10. Change History
 
+### 2026-11-01 — 12-hour cap on sliding sessions
+
+**Technical analysis:** Security review of the login fix found no authentication bypass, but sliding renewal would let a stolen cookie live indefinitely. Renewed tokens now keep the original login time and stop renewing 12 hours after login (`visualizer.auth.max-session-hours`).
+
+**Files changed:** backend `JwtTokenService.java`, `application.properties`, `JwtTokenServiceTest.java` (new); documentation; `docs/HANDOVER.md`.
+
+**Verification:** Tests added; run by the owner's `mvn clean verify`.
+
 ### 2026-11-01 — Fix false logouts after running code
 
 **Technical analysis:** `/error` required a login, so any 403/500 was reported as 401 "Authentication required" and the frontend logged the user out; the JWT also expired 30 minutes after login regardless of activity. Now `/error` is open, CSRF failures return JSON 403, the session slides while the user is active, and the frontend refreshes the CSRF token and retries once, logging out only on a real 401.

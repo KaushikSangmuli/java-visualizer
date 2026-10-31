@@ -140,6 +140,7 @@ Java package names map to real nested directories such as `backend/src/main/java
 | `visualizer.auth.login-max-failures` | `10` | Login failures allowed before a client is throttled |
 | `visualizer.auth.login-window-ms` | `900000` | Login failure throttle window |
 | `visualizer.auth.jwt-ttl-seconds` | `1800` | JWT cookie lifetime; renewed on any authenticated request once half of it has passed, so only 30 minutes of inactivity signs a user out |
+| `visualizer.auth.max-session-hours` | `12` | Hard limit for renewal: a session is never renewed beyond this many hours after the password login |
 | `visualizer.auth.cookie-secure` | local `false`, hosted `true` | Requires HTTPS when enabled |
 | `visualizer.auth.cookie-same-site` | local `Lax`, hosted `None` | Browser cookie cross-site policy (auth and CSRF cookies) |
 | `visualizer.trust-forwarded-for` | local `false`, hosted `true` | Use the last `X-Forwarded-For` entry (appended by the Container Apps ingress) as the client address for login throttling |
@@ -455,3 +456,11 @@ The current task shell cannot resolve `java`, `javac`, `mvn`, or `npm.cmd`; it h
 - `src/main/java/com/example/demo/service/auth/JwtTokenService.java` — new `renewIfHalfExpired`.
 
 **Verification:** Not compiled here (needs the Spring dependencies); the changes use standard Spring Security 6.2 APIs. The frontend half was tested in headless Chromium against a mock backend. Pending: owner pulls, runs `mvn clean verify`, restarts the backend and repeats the custom-code run and login; if a failure remains, the backend console now shows its real cause.
+
+### 2026-11-01 — Security review of the login fix; 12-hour session cap
+
+**Technical analysis:** Reviewed the 2026-11-01 login fix for authentication bypass. Permitting `/error` does not bypass anything: authorization is enforced on the original request before any controller runs, and `/error` only renders status/error name (Spring Boot defaults exclude message and stack trace). The JSON 403 only changes the CSRF failure format; CSRF is still enforced. The frontend retry still needs a header matching the CSRF cookie, and other sites cannot read the token (CORS). One real trade-off was found: the sliding session let a stolen cookie be kept alive indefinitely. Fixed with a `login_at` claim (epoch seconds of the password login) copied unchanged into renewed tokens; renewal stops `visualizer.auth.max-session-hours` (12) after login, and tokens without the claim (issued before this change) are not renewed. Renewal still only happens after the decoder has verified the signature and expiry. Password reset still does not revoke existing tokens (they expire within 30 minutes without renewal beyond the cap) — unchanged known limitation.
+
+**Files and methods changed:** `src/main/java/com/example/demo/service/auth/JwtTokenService.java` — `LOGIN_AT_CLAIM`, `writeAuthCookie` (login time), `renewIfHalfExpired` (cap, legacy tokens); `src/main/resources/application.properties` — `visualizer.auth.max-session-hours`; `src/test/java/com/example/demo/service/auth/JwtTokenServiceTest.java` — new (login claim, fresh token not renewed, half-used renewed keeping login time, over-12-hours not renewed, legacy token not renewed).
+
+**Verification:** Not compiled here (Spring dependencies unavailable). The five new tests run in the owner's `mvn clean verify`.

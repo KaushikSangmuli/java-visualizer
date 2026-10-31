@@ -50,7 +50,8 @@ GitHub: `KaushikSangmuli/java-visualizer` (public for now; the owner may make it
 | `1c08d1d` | Deployment readiness: user-code sandbox (Security Manager), blocklist gaps (`getenv`, `System::exit`), real client IP behind Azure ingress and per-account rate limits, cross-site CSRF cookie, `ddl-auto=none` on SQL Server, Flyway V4 drops unused Spring Session tables, Dockerfile fixes, CI/CD workflow, Static Web Apps config, `docs/DEPLOYMENT.md`. |
 | `e5e023b`, `40206a2`, `79ae3b5` | Status refresh (owner verified `mvn clean verify` and the UI), handover and deployment runbook. |
 | `8149050` | Floating, draggable step controls that stay where dropped (remembered per browser). |
-| (next commit, 2026-11-01) | Fix false logouts: `/error` permitted, JSON 403 for CSRF, sliding JWT session, frontend CSRF retry. |
+| `faf2801` | Fix false logouts: `/error` permitted, JSON 403 for CSRF, sliding JWT session, frontend CSRF retry. |
+| (next commit, 2026-11-01) | Security review of that fix (no bypass); sliding session capped at 12 hours after login; `JwtTokenServiceTest`. |
 
 ## 4. Key decisions and why
 
@@ -58,6 +59,7 @@ GitHub: `KaushikSangmuli/java-visualizer` (public for now; the owner may make it
 |---|---|
 | Work on `feature/function-box-implementation`, merge to `main` by pull request | `main` deploys automatically; CI must be green first. |
 | JWT in an HttpOnly cookie + CSRF token | Token not readable by JavaScript; CSRF protects cookie-based requests. |
+| Sliding 30-minute session, hard cap 12 hours after login | Active users are not logged out mid-session; a stolen cookie cannot be kept alive indefinitely. |
 | Local OTP `1234` only in `local` / `local-sqlserver` profiles | Develop without email; hosted `azure` profile sends real codes via Brevo. |
 | H2 locally, Azure SQL in the cloud, Flyway owns the schema | Same code, different profile; migrations run automatically on startup; never edit an applied migration — add a new version. |
 | `ddl-auto=none` on SQL Server, `validate` on H2 | Hibernate's type check could reject `NVARCHAR`/`DATETIME2`; tests still validate on H2. |
