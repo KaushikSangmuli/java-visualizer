@@ -55,7 +55,7 @@ GitHub: `KaushikSangmuli/java-visualizer` (public for now; the owner may make it
 | `ec0031d` | DSA views for Java collections (list, linked list nodes with addresses, stack, queue, priority queue, set, map; size); stack/queue from code usage; Collections example. |
 | `913decd` | Tree diagrams: user binary trees (variable highlights) and TreeMap/TreeSet red-black trees; BST example. |
 | `4cd30d4` | Azure SQL time mapping and optional signup allowlist (off). |
-| PR #1 (2026-11-01) | Pull request to `main`; first CI run all green (Maven tests, pnpm build, Docker image). Deployment checklist regrouped by GitHub / Brevo / Azure. |
+| PR #1 → `bcfd81b`, PR #2 → `d0edbef` (2026-11-01) | Pull request to `main`; first CI run all green (Maven tests, pnpm build, Docker image). Deployment checklist regrouped by GitHub / Brevo / Azure. |
 
 ## 4. Key decisions and why
 
@@ -92,7 +92,7 @@ Open `http://localhost:5173`, sign up, use OTP `1234`. Tests: `mvn clean verify`
 ## 6. Where things stand (2026-11-01)
 
 - **Verified on the owner's machine:** `mvn clean verify` passes (4 warnings, not yet reviewed) up to commit `5590aa3`; the UI works end to end locally; frontend declared complete.
-- **Verified in CI (PR #1, all commits up to `4cd30d4`):** `mvn clean verify`, `pnpm run build`, Docker build + image check all green. Merge to `main` in progress.
+- **Verified in CI (PR #1, all commits up to `4cd30d4`):** `mvn clean verify`, `pnpm run build`, Docker build + image check all green. Merged to `main`; `main` runs green; image published to GHCR (`backend:d0edbef…`).
 - **Collection views and tree diagrams (2026-11-01):** verified with the real tracer, headless Chromium and CI; owner browser check pending.
 - **Not yet checked in the owner's browser:** floating step controls (tested in headless Chromium); login-session fix from 2026-11-01 (owner hit a false "Authentication required" after running custom code).
 - **Pre-deployment items done (2026-11-01):** Azure SQL time mapping (UTC `TIMESTAMP` for `Instant`) and an optional signup allowlist, left off so anyone can sign up (`ALLOWED_SIGNUP_EMAILS` can restrict it later).
@@ -101,7 +101,7 @@ Open `http://localhost:5173`, sign up, use OTP `1234`. Tests: `mvn clean verify`
 ## 7. What to do next
 
 1. ~~Open a pull request and get CI green~~ (done, PR #1).
-2. Merge PR #1; check the `main` run is green and note the image tag; make the GHCR package public; create the GitHub environment `production`.
+2. ~~Merge PR #1, `main` run green, image tag~~ (done). Confirm the GHCR package is public; create the GitHub environment `production`.
 3. Brevo and Azure steps, then GitHub variables/secret and the first deploy — the checklist grouped by place in `plan.markdown` §11 (details in `DEPLOYMENT.md`). Tick each box as it is done.
 4. Smoke-test in Chrome/Edge; set the budget alert.
 5. Later: review the 4 Maven warnings; decide whether to delete the commented-out frontend code; custom domain (fixes Safari); production-readiness review before public launch; account deletion; optional "My runs" UI.

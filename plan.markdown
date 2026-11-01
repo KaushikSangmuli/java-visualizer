@@ -6,7 +6,7 @@
 
 > **New here or lost the chat history?** Read [`docs/HANDOVER.md`](docs/HANDOVER.md) first (what was done, decisions, how to continue). The step-by-step deployment checklist is section 11 of this file; screen-by-screen details are in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-**Overall project status (2026-11-01):** pull request #1 (`feature/function-box-implementation` → `main`, up to commit `4cd30d4`) passed CI: `mvn clean verify`, `pnpm run build` and the Docker build + image check all green on GitHub Actions. Merge is in progress; Azure, Brevo and GitHub deployment settings are next (section 11 checklist).
+**Overall project status (2026-11-01):** pull request #1 (`feature/function-box-implementation` → `main`, up to commit `4cd30d4`) passed CI: `mvn clean verify`, `pnpm run build` and the Docker build + image check all green on GitHub Actions. Merged to `main` (`bcfd81b`, then docs `d0edbef`); both `main` runs green and the backend image is published to GHCR. Next: GHCR visibility, GitHub environment, then Brevo and Azure (section 11 checklist).
 
 | Area | Status | Pending |
 |---|---|---|
@@ -19,8 +19,8 @@
 | Java collection views (list, linked list with node addresses, stack, queue, priority queue, set, map; size; stack/queue from code usage) | Done; `mvn clean verify` green in CI on PR #1 (2026-11-01) | Owner browser check |
 | Azure SQL `Instant`/`DATETIME2` mapping (UTC) and optional signup allowlist (off: signup open) | Done; `mvn clean verify` green in CI on PR #1 (2026-11-01) | Time mapping checked on first Azure deploy |
 | Run history (`visualization_run`: every run, outcome, failure reason; `GET /api/runs`) | Done and verified: owner ran `mvn clean verify` successfully (4 warnings) on 2026-10-31 (H2 migration + integration test) | Azure SQL migration on first deploy; optional UI |
-| Stage 3 Docker image | Done: first build green in GitHub Actions (PR #1, 2026-11-01), image check passed (javac, `jdk.jdi`, uid 10001) | Publish to GHCR on merge; sample traces inside the container on Azure |
-| Stage 4 GitHub Actions CI | Done: first run green on PR #1 (2026-11-01) — backend `mvn verify`, frontend build, Docker build + image check | Green run on `main` after merge |
+| Stage 3 Docker image | Done: first build green in GitHub Actions (PR #1, 2026-11-01), image check passed (javac, `jdk.jdi`, uid 10001) | Published to GHCR from `main`; sample traces inside the container on Azure |
+| Stage 4 GitHub Actions CI | Done: first run green on PR #1 (2026-11-01) — backend `mvn verify`, frontend build, Docker build + image check | — (green on `main`, runs #2 and #4) |
 | Stage 5–6 Azure deployment (SWA Free, Container Apps, Azure SQL free, Brevo, GHCR, OIDC) | Workflow deploy jobs and step-by-step guide `docs/DEPLOYMENT.md` ready; skipped until Azure variables exist. Checklist by place (GitHub / Brevo / Azure) in section 11 | Steps G3 onward in section 11 |
 | Stage 7 production readiness / sandbox gate | User-code JVM sandboxed (Security Manager: no env/files/network/processes); blocklist gaps closed; per-user limits | Private beta first; per-user CPU/memory isolation and threat review before public launch |
 | Future: DSA sheet, company lists, LeetCode picker | Not started | Product decisions |
@@ -265,6 +265,12 @@ Pricing and free tiers change; the figures below were checked on **2026-10-18** 
 
 ## 10. Change History
 
+### 2026-11-01 — Merged to main; image published
+
+- **What:** PR #1 merged (`bcfd81b`) and docs PR #2 merged (`d0edbef`); both `main` CI runs green, backend image pushed to GHCR, deploy jobs skipped as designed. Checklist G3–G4 ticked, image tag recorded.
+- **Files:** `plan.markdown`, `docs/HANDOVER.md`, `README.md`.
+- **Verification:** run results read from the GitHub API. GHCR package visibility could not be checked from the assistant's environment (owner to confirm on the package page).
+
 ### 2026-11-01 — CI green on pull request #1; deployment checklist grouped by place
 
 - **What:** first GitHub Actions run (PR #1 → `main`, run `41250485128`): backend `mvn clean verify`, frontend `pnpm run build`, Docker build and image check all passed; deploy jobs skipped as designed. Section 11 rewritten as a checklist grouped by where the work happens (GitHub part A, Brevo, Azure, GitHub part B, smoke test) with completed steps ticked.
@@ -443,14 +449,23 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 
 | Name | Where it comes from | Value |
 |---|---|---|
-| Image | G4, workflow log | `ghcr.io/kaushiksangmuli/java-visualizer/backend:<sha>` |
+| Image | G4, workflow log | `ghcr.io/kaushiksangmuli/java-visualizer/backend:d0edbef2ffa2990cce929193b9fae47926f0bf8f` (any later green `main` run's SHA also works) |
 | Resource group / region | A1 | `rg-java-visualizer` / ... |
 | SQL server / database | A2 | `....database.windows.net` / `javavisualizer` |
 | `DB_URL` | A2 | `jdbc:sqlserver://<server>.database.windows.net:1433;database=javavisualizer;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;` |
-| Brevo sender | B2 | ... |
+| Brevo sender | B2 | `sangmulekaoushik@gmail.com` (`VISUALIZER_EMAIL_SENDER`) |
 | `FRONTEND_URL` | A4 | `https://....azurestaticapps.net` |
 | Container App name / `BACKEND_URL` | A5 | ... / `https://....azurecontainerapps.io` |
 | Managed identity client ID | A6 | ... |
+
+**No-charge rules (owner decision 2026-11-01: free plans only; if a free allowance runs out the app may stop, but nothing may be billed):**
+
+- Subscription: Azure only stops resources instead of billing when the subscription has a **spending limit** (Azure for Students, or Free Trial while on credit). Pay-As-You-Go has no spending limit; there, budgets only *alert*, so add the automatic stop (A7).
+- Static Web Apps: plan **Free** only (never Standard).
+- Azure SQL: **Apply free offer**; free-limit behaviour **Auto-pause the database until next month** (never "Continue using database for additional charges" — cannot be switched back); **Microsoft Defender for SQL: Not now** (its trial becomes paid).
+- Container Apps: environment **Consumption only** (no Dedicated/workload profiles); min replicas **0**, max **1**; logs destination **Don't save logs** (or Azure Monitor/Log Analytics only if inside its free ingestion); no Azure Container Registry (image comes from public GHCR); no VNet, no custom domain certificates, no Dapr add-ons.
+- Do not enable anything offered as a trial (Defender for Cloud plans, Application Insights paid tiers, geo-redundant backups).
+- A7 budget alert, plus on Pay-As-You-Go an automatic stop of the Container App when the budget threshold is reached (cost data lags several hours, so it is a backstop, not a hard cap).
 
 **Checklist by place** (do the groups in this order: GitHub part A → Brevo → Azure → GitHub part B → smoke test; Brevo and the Azure steps can be done in parallel). Status as of 2026-11-01.
 
@@ -458,16 +473,17 @@ Follow in order; tick each box and fill in the values as you go. Screen-by-scree
 
 - [x] **G1. Pull request #1** `feature/function-box-implementation` → `main` opened (2026-11-01).
 - [x] **G2. CI green on the pull request** (run `41250485128`): Backend tests (Maven) ✓, Frontend build (pnpm) ✓, Backend image (Docker + image check) ✓; deploy jobs skipped as expected. First real `mvn clean verify`, `pnpm run build` and Docker build of everything up to `4cd30d4`.
-- [ ] **G3. Merge pull request #1** (owner merging, 2026-11-01). The push to `main` runs CI again and publishes `ghcr.io/kaushiksangmuli/java-visualizer/backend:<merge-commit-sha>`.
-- [ ] **G4. Check the `main` run is green** (Actions tab → CI/CD → the run for the merge commit) and copy the image tag (commit SHA) from the **Backend image** job into the values table.
+- [x] **G3. Merge pull request #1** (merged 2026-11-01, merge commit `bcfd81b`; docs PR #2 merged after it, `main` = `d0edbef`). Each push to `main` runs CI again and publishes `ghcr.io/kaushiksangmuli/java-visualizer/backend:<commit-sha>`.
+- [x] **G4. Check the `main` run is green** (runs #2 and #4 green, deploy jobs skipped; latest image tag `d0edbef2ffa2990cce929193b9fae47926f0bf8f`) (Actions tab → CI/CD → the run for the merge commit) and copy the image tag (commit SHA) from the **Backend image** job into the values table.
 - [ ] **G5. Make the image public**: GitHub profile → **Packages** → `java-visualizer/backend` → **Package settings** → **Change visibility** → Public (or keep it private and add registry credentials in A5, see `DEPLOYMENT.md`).
 - [ ] **G6. Create the environment** `production`: repo **Settings → Environments → New environment** (optional: Required reviewers = yourself, so each deploy waits for approval).
 
 ### Brevo (OTP email)
 
-- [ ] **B1. Free account** at brevo.com.
-- [ ] **B2. Verify the sender address** (Senders, domains & dedicated IPs → add sender → click the link in the email). Record it as `VISUALIZER_EMAIL_SENDER`.
-- [ ] **B3. API key** (SMTP & API → API keys → Generate). Store it in a password manager; it goes into the Container App secret `brevo-api-key`.
+- [x] **B1. Free account** at brevo.com (2026-11-01).
+- [x] **B2. Verify the sender address** (verified 2026-11-01: `sangmulekaoushik@gmail.com`, name `java-visualiser`; shared IP, default DKIM, freemail DMARC warning — codes may land in Spam until a custom domain is authenticated in Brevo) (Senders, domains & dedicated IPs → add sender → click the link in the email). Record it as `VISUALIZER_EMAIL_SENDER`.
+- [x] **B3. API key** (created and stored by the owner, 2026-11-01) (SMTP & API → API keys → Generate). Permissions: transactional emails **All**, everything else **None** (the backend only calls `POST /v3/smtp/email`). Copy it at once (`xkeysib-…`, shown only once); store it in a password manager; it goes into the Container App secret `brevo-api-key`.
+- [x] **B4. Authorized IPs blocking off for API keys** (Security → Authorized IPs; Container Apps has no fixed outbound IP). Confirmed deactivated 2026-11-01.
 
 ### Azure
 
